@@ -8,8 +8,12 @@
 // We verify the RS256 signature using WebCrypto against the team's public JWKS
 // (`https://<team>/cdn-cgi/access/certs`), then check `aud`, `iss` and `exp`.
 //
-// A dev bypass exists ONLY when env.DEV_BYPASS_AUTH === "true" AND the Access
-// vars are unset/placeholder — never in production.
+// Only CF_ACCESS_AUD is required: the team domain is taken from CF_ACCESS_TEAM_DOMAIN
+// when set, otherwise derived from the token's `iss` (restricted to
+// *.cloudflareaccess.com). The app-specific AUD is what scopes acceptance.
+//
+// A dev bypass exists ONLY when env.DEV_BYPASS_AUTH === "true" AND CF_ACCESS_AUD
+// is unset/placeholder — never in production.
 // ============================================================================
 
 export interface Env {
@@ -86,8 +90,7 @@ function teamDomainUrl(env: Env): string {
   return domain.replace(/\/$/, '');
 }
 
-async function fetchCerts(env: Env): Promise<void> {
-  const base = teamDomainUrl(env);
+async function fetchCerts(base: string): Promise<void> {
   const url = `${base}/cdn-cgi/access/certs`;
   const res = await fetch(url, { cf: { cacheTtl: 3600 } } as RequestInit);
   if (!res.ok) {
@@ -115,19 +118,32 @@ async function fetchCerts(env: Env): Promise<void> {
   certsTeamDomain = base;
 }
 
-async function getKey(kid: string, env: Env): Promise<CryptoKey | undefined> {
-  const base = teamDomainUrl(env);
+async function getKey(kid: string, base: string): Promise<CryptoKey | undefined> {
   const stale = Date.now() - certsFetchedAt > CERTS_TTL_MS;
   if (KEY_CACHE.size === 0 || stale || certsTeamDomain !== base) {
-    await fetchCerts(env);
+    await fetchCerts(base);
   }
   let key = KEY_CACHE.get(kid);
   if (!key) {
     // kid not found — keys may have rotated; force one refresh.
-    await fetchCerts(env);
+    await fetchCerts(base);
     key = KEY_CACHE.get(kid);
   }
   return key;
+}
+
+// Trust an issuer only if it is an https Cloudflare Access team domain.
+function isCloudflareAccessIssuer(iss: string): boolean {
+  try {
+    const u = new URL(iss);
+    return (
+      u.protocol === 'https:' &&
+      u.hostname.endsWith('.cloudflareaccess.com') &&
+      (u.pathname === '' || u.pathname === '/')
+    );
+  } catch {
+    return false;
+  }
 }
 
 // Read the JWT from header first, then the CF_Authorization cookie.
@@ -149,15 +165,14 @@ function extractToken(request: Request): string | null {
  */
 export async function verifyAccess(request: Request, env: Env): Promise<boolean> {
   // Dev bypass: only when explicitly enabled AND Access is not configured.
-  if (
-    env.DEV_BYPASS_AUTH === 'true' &&
-    (isPlaceholder(env.CF_ACCESS_TEAM_DOMAIN) || isPlaceholder(env.CF_ACCESS_AUD))
-  ) {
+  if (env.DEV_BYPASS_AUTH === 'true' && isPlaceholder(env.CF_ACCESS_AUD)) {
     return true;
   }
 
-  if (isPlaceholder(env.CF_ACCESS_TEAM_DOMAIN) || isPlaceholder(env.CF_ACCESS_AUD)) {
-    // Access not configured and no dev bypass -> reject.
+  if (isPlaceholder(env.CF_ACCESS_AUD)) {
+    // Access AUD not configured and no dev bypass -> reject.
+    // (Team domain is optional: when unset we derive the trusted issuer from
+    //  the token's `iss`, restricted to *.cloudflareaccess.com.)
     return false;
   }
 
@@ -179,10 +194,26 @@ export async function verifyAccess(request: Request, env: Env): Promise<boolean>
 
   if (header.alg !== 'RS256' || !header.kid) return false;
 
+  // Determine the trusted team domain (issuer) to fetch signing keys from.
+  // - If CF_ACCESS_TEAM_DOMAIN is configured, require an exact iss match.
+  // - Otherwise derive it from the token's iss, trusting only Cloudflare
+  //   Access domains. The aud check below (your app's unique AUD) is what
+  //   actually scopes acceptance to tokens minted for THIS application.
+  const iss = (payload.iss || '').replace(/\/$/, '');
+  let base: string;
+  if (!isPlaceholder(env.CF_ACCESS_TEAM_DOMAIN)) {
+    const configured = teamDomainUrl(env);
+    if (iss !== configured) return false;
+    base = configured;
+  } else {
+    if (!isCloudflareAccessIssuer(iss)) return false;
+    base = iss;
+  }
+
   // Verify signature over `${header}.${payload}`.
   let key: CryptoKey | undefined;
   try {
-    key = await getKey(header.kid, env);
+    key = await getKey(header.kid, base);
   } catch {
     return false;
   }
@@ -214,9 +245,7 @@ export async function verifyAccess(request: Request, env: Env): Promise<boolean>
   if (typeof payload.exp === 'number' && now >= payload.exp) return false;
   if (typeof payload.nbf === 'number' && now < payload.nbf) return false;
 
-  // iss must match the team domain.
-  const expectedIss = teamDomainUrl(env);
-  if (!payload.iss || payload.iss.replace(/\/$/, '') !== expectedIss) return false;
+  // iss was already validated above (and used to fetch the signing keys).
 
   // aud must include our application AUD tag.
   const aud = payload.aud;
