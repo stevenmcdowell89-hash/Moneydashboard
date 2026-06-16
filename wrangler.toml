@@ -1,7 +1,8 @@
 # Single Cloudflare Worker that serves BOTH the React app (static assets) and
 # the JSON API (auth + D1 persistence + open-banking proxy). One deploy, one
 # origin, one Cloudflare Access app. No forecast logic here — the engine runs
-# client-side. The GitHub Actions deploy workflow injects database_id for you.
+# client-side. The Cloudflare Workers Builds deploy command (scripts/cf-deploy.sh)
+# creates the D1 database and injects database_id for you on each deploy.
 name = "budget-planner"
 main = "worker/src/index.ts"
 compatibility_date = "2025-01-01"
