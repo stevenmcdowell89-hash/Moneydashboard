@@ -41,7 +41,7 @@ export type Frequency = 'Monthly' | 'Quarterly' | 'Annual' | 'Weekly' | '4-weekl
 export type EntryMode = 'net' | 'gross';
 export type PensionType = 'salary_sacrifice' | 'net_pay' | 'relief_at_source';
 export type ScenarioType = 'adjustment' | 'target';
-export type ItemType = 'income' | 'bill' | 'savings';
+export type ItemType = 'income' | 'bill';
 
 export interface Settings {
   id: 1;
@@ -49,6 +49,7 @@ export interface Settings {
   projection_months_default: number;
   currency: string;
   tax_year: string;
+  default_savings_rate: number;
 }
 
 export interface Income {
@@ -69,7 +70,7 @@ export interface IncomeOneoff {
   id: number;
   name: string;
   gross_amount: number;
-  month: number;
+  month_ym: string;
   pension_sacrifice_pct: number | null;
 }
 
@@ -80,24 +81,24 @@ export interface Bill {
   amount: number;
   frequency: Frequency;
   active: boolean;
+  is_savings: boolean;
+  balance: number;
+  track_actuals: boolean;
 }
 
-export interface SavingsTarget {
+export interface Target {
   id: number;
   name: string;
-  balance: number;
-  monthly_contribution: number;
-  annual_rate: number;
-  target_amount: number | null;
-  target_month: number | null;
-  ring_fenced: boolean;
+  target_amount: number;
+  target_ym: string;
+  linked_bill_id: number | null;
 }
 
 export interface PlanEvent {
   id: number;
   name: string;
   total_cost: number;
-  start_month: number;
+  start_ym: string;
   duration_months: number;
   applies_to: string;
 }
@@ -123,7 +124,7 @@ export interface PlanState {
   income: Income[];
   income_oneoff: IncomeOneoff[];
   bills: Bill[];
-  savings_targets: SavingsTarget[];
+  targets: Target[];
   events: PlanEvent[];
   scenarios: Scenario[];
   scenario_overrides: ScenarioOverride[];

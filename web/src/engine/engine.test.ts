@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeFrequency, netFromGross, project, requiredContribution, resolveScenario } from './index';
-import type { Bill, Income, PlanState, ResolvedPlan, SavingsTarget, TaxConfig } from '../types';
+import {
+  monthGoalHitOffset,
+  monthlyBillAmount,
+  normalizeFrequency,
+  netFromGross,
+  project,
+  requiredContribution,
+  resolveScenario,
+  targetStatus,
+} from './index';
+import type { Bill, Income, PlanState, ResolvedPlan, Target, TaxConfig } from '../types';
 
 // 2026/27 rUK config used throughout.
 const TAX: TaxConfig = {
@@ -15,6 +24,9 @@ const TAX: TaxConfig = {
   ni_thresholds: { primary: 12570, upper: 50270, taper_start: 100000 },
   ni_rates: { main: 0.08, upper: 0.02 },
 };
+
+// Fixed anchor for deterministic offsets.
+const NOW = '2026-01';
 
 describe('normalizeFrequency', () => {
   it('converts each frequency to monthly equivalent', () => {
@@ -106,14 +118,19 @@ describe('netFromGross (known payslip, 2026/27 rUK)', () => {
   });
 });
 
+// ----------------------------------------------------------------------------
+// Builders for the new model.
+// ----------------------------------------------------------------------------
+
 function resolved(partial: Partial<ResolvedPlan>): ResolvedPlan {
   return {
     income: [],
     income_oneoff: [],
     bills: [],
-    savings_targets: [],
     events: [],
     opening_cash: 0,
+    savingsRate: 0,
+    nowYM: NOW,
     scenarioId: null,
     ...partial,
   };
@@ -141,86 +158,235 @@ const bill = (over: Partial<Bill>): Bill => ({
   amount: 500,
   frequency: 'Monthly',
   active: true,
+  is_savings: false,
+  balance: 0,
+  track_actuals: false,
   ...over,
 });
 
-const target = (over: Partial<SavingsTarget>): SavingsTarget => ({
+const target = (over: Partial<Target>): Target => ({
   id: 1,
   name: 'Pot',
-  balance: 0,
-  monthly_contribution: 100,
-  annual_rate: 0,
-  target_amount: null,
-  target_month: null,
-  ring_fenced: true,
+  target_amount: 1200,
+  target_ym: '2026-12',
+  linked_bill_id: null,
   ...over,
 });
 
 describe('project', () => {
-  it('rolls cash and compounds savings month by month', () => {
+  it('rolls cash month by month with income and a spend bill', () => {
+    const r = project(
+      resolved({ opening_cash: 1000, income: [income({})], bills: [bill({})] }),
+      3,
+      TAX,
+    );
+    // netFlow each month = 2000 - 500 = 1500
+    expect(r.points.map((p) => p.cash)).toEqual([2500, 4000, 5500]);
+    expect(r.points.map((p) => p.spend)).toEqual([500, 500, 500]);
+    expect(r.points.map((p) => p.saved)).toEqual([0, 0, 0]);
+    expect(r.points[0].ym).toBe('2026-01');
+    expect(r.points[2].ym).toBe('2026-03');
+    expect(r.lowestCash).toEqual({ offset: 1, ym: '2026-01', value: 2500 });
+    expect(r.nowYM).toBe(NOW);
+  });
+
+  it('a savings-line bill deducts from cash AND accrues a balance', () => {
     const r = project(
       resolved({
         opening_cash: 1000,
         income: [income({})],
-        bills: [bill({})],
-        savings_targets: [target({})],
+        bills: [bill({ id: 2, name: 'Emergency fund', amount: 100, is_savings: true })],
       }),
       3,
       TAX,
     );
-    expect(r.points.map((p) => p.cash)).toEqual([2400, 3800, 5200]);
+    // saved is reported separately and removed from cash: netFlow = 2000 - 100 = 1900
+    expect(r.points.map((p) => p.saved)).toEqual([100, 100, 100]);
+    expect(r.points.map((p) => p.spend)).toEqual([0, 0, 0]);
+    expect(r.points.map((p) => p.cash)).toEqual([2900, 4800, 6700]);
+    // balance grows (0% rate): 100, 200, 300
     expect(r.points.map((p) => p.savingsTotal)).toEqual([100, 200, 300]);
-    expect(r.lowestCash).toEqual({ month: 1, value: 2400 });
-    expect(r.targets[0].endBalance).toBe(300);
   });
 
-  it('compounds interest on the savings balance', () => {
-    const r = project(resolved({ savings_targets: [target({ balance: 1000, monthly_contribution: 0, annual_rate: 12 })] }), 1, TAX);
-    // 1000 * (1 + 0.12/12) = 1010
-    expect(r.targets[0].balances[0]).toBeCloseTo(1010, 6);
+  it('compounds interest on a savings-line balance', () => {
+    const r = project(
+      resolved({
+        savingsRate: 12,
+        bills: [bill({ id: 2, name: 'ISA', amount: 0, is_savings: true, balance: 1000 })],
+      }),
+      1,
+      TAX,
+    );
+    // 1000 * (1 + 0.12/12) + 0 = 1010
+    expect(r.points[0].savingsTotal).toBeCloseTo(1010, 6);
   });
 
-  it('applies events over their duration', () => {
+  it('an inactive savings line contributes nothing', () => {
+    const r = project(
+      resolved({ bills: [bill({ id: 2, amount: 100, is_savings: true, active: false })] }),
+      2,
+      TAX,
+    );
+    expect(r.points.map((p) => p.saved)).toEqual([0, 0]);
+    expect(r.points.map((p) => p.savingsTotal)).toEqual([0, 0]);
+  });
+
+  it('applies an absolute-month event over its duration', () => {
     const r = project(
       resolved({
         opening_cash: 0,
-        events: [{ id: 1, name: 'Holiday', total_cost: 600, start_month: 2, duration_months: 3, applies_to: 'all' }],
+        // start 2026-02 = offset 2 (nowYM 2026-01), 3 months → offsets 2,3,4
+        events: [{ id: 1, name: 'Holiday', total_cost: 600, start_ym: '2026-02', duration_months: 3, applies_to: 'all' }],
+      }),
+      5,
+      TAX,
+    );
+    expect(r.points.map((p) => p.events)).toEqual([0, 200, 200, 200, 0]);
+  });
+
+  it('lands a one-off bonus in its absolute month', () => {
+    const r = project(
+      resolved({
+        income: [income({})],
+        // 2026-03 = offset 3
+        income_oneoff: [{ id: 1, name: 'Bonus', gross_amount: 1000, month_ym: '2026-03', pension_sacrifice_pct: null }],
       }),
       4,
       TAX,
     );
-    expect(r.points.map((p) => p.events)).toEqual([0, 200, 200, 200]);
+    // No gross-entry base income → bonus taxed standalone (net of standard allowance/bands).
+    expect(r.points[0].income).toBe(2000);
+    expect(r.points[2].income).toBeGreaterThan(2000);
+    expect(r.points[3].income).toBe(2000);
+  });
+});
+
+describe('monthlyBillAmount', () => {
+  it('normalises an active bill and zeroes an inactive one', () => {
+    expect(monthlyBillAmount(bill({ amount: 1200, frequency: 'Annual' }))).toBeCloseTo(100, 6);
+    expect(monthlyBillAmount(bill({ amount: 500, active: false }))).toBe(0);
   });
 });
 
 describe('requiredContribution', () => {
   it('zero-rate: simple division', () => {
-    expect(requiredContribution(target({ target_amount: 1200, balance: 0, annual_rate: 0 }), 12)).toBeCloseTo(100, 6);
+    expect(requiredContribution(1200, 0, 12, 0)).toBeCloseTo(100, 6);
+  });
+  it('zero-rate with a starting balance', () => {
+    expect(requiredContribution(1200, 600, 12, 0)).toBeCloseTo(50, 6);
   });
   it('with interest: annuity formula', () => {
-    const c = requiredContribution(target({ target_amount: 1200, balance: 0, annual_rate: 12 }), 12);
+    const c = requiredContribution(1200, 0, 12, 12);
     expect(c).toBeCloseTo(94.62, 1);
+  });
+  it('n <= 0 falls back to the bare gap', () => {
+    expect(requiredContribution(1200, 500, 0, 12)).toBe(700);
+  });
+});
+
+describe('monthGoalHitOffset', () => {
+  it('finds the month the goal is reached', () => {
+    // 100/mo, 0% → hits 1000 at offset 10
+    expect(monthGoalHitOffset(0, 100, 0, 1000, 600)).toBe(10);
+  });
+  it('returns null when unreachable in range', () => {
+    expect(monthGoalHitOffset(0, 10, 0, 1000, 12)).toBeNull();
+  });
+});
+
+describe('targetStatus', () => {
+  it('reports on-track when contributions reach the goal by the deadline', () => {
+    const plan = resolved({
+      savingsRate: 0,
+      // linked savings line: balance 0, 110/mo
+      bills: [bill({ id: 5, name: 'Holiday fund', amount: 110, is_savings: true, balance: 0 })],
+    });
+    // target 1200 by 2026-12 (offset 12, monthsRemaining 11). 110*11 = 1210 ≥ 1200.
+    const t = target({ target_amount: 1200, target_ym: '2026-12', linked_bill_id: 5 });
+    const s = targetStatus(t, plan);
+    expect(s.currentBalance).toBe(0);
+    expect(s.currentContribution).toBe(110);
+    expect(s.monthsRemaining).toBe(11);
+    expect(s.onTrack).toBe(true);
+    expect(s.shortfallPerMonth).toBe(0);
+    expect(s.projectedHit).not.toBeNull();
+  });
+
+  it('reports a shortfall when contributions fall short', () => {
+    const plan = resolved({
+      savingsRate: 0,
+      bills: [bill({ id: 5, name: 'Holiday fund', amount: 50, is_savings: true, balance: 0 })],
+    });
+    // need ~109/mo for 1200 over 11 months; contributing 50 → shortfall.
+    const t = target({ target_amount: 1200, target_ym: '2026-12', linked_bill_id: 5 });
+    const s = targetStatus(t, plan);
+    expect(s.onTrack).toBe(false);
+    expect(s.requiredPerMonth).toBeCloseTo(1200 / 11, 4);
+    expect(s.shortfallPerMonth).toBeCloseTo(1200 / 11 - 50, 4);
+  });
+
+  it('treats an unlinked target as zero balance/contribution', () => {
+    const plan = resolved({ savingsRate: 0 });
+    const s = targetStatus(target({ linked_bill_id: null }), plan);
+    expect(s.currentBalance).toBe(0);
+    expect(s.currentContribution).toBe(0);
+    expect(s.onTrack).toBe(false);
   });
 });
 
 describe('resolveScenario', () => {
-  it('applies overrides (0 cancels, value replaces, absent unchanged)', () => {
-    const plan: PlanState = {
-      settings: { id: 1, opening_cash: 0, projection_months_default: 24, currency: 'GBP', tax_year: '2026/27' },
+  function basePlan(): PlanState {
+    return {
+      settings: {
+        id: 1,
+        opening_cash: 0,
+        projection_months_default: 24,
+        currency: 'GBP',
+        tax_year: '2026/27',
+        default_savings_rate: 3,
+      },
       income: [income({ id: 1, net_amount: 2000 })],
       income_oneoff: [],
-      bills: [bill({ id: 1, amount: 500 }), bill({ id: 2, name: 'Gym', amount: 40 })],
-      savings_targets: [],
-      events: [],
+      bills: [
+        bill({ id: 1, amount: 500 }),
+        bill({ id: 2, name: 'Gym', amount: 40 }),
+        bill({ id: 3, name: 'ISA', amount: 100, is_savings: true }),
+      ],
+      targets: [],
+      events: [
+        { id: 1, name: 'All event', total_cost: 100, start_ym: '2026-02', duration_months: 1, applies_to: 'all' },
+        { id: 2, name: 'Sc7 event', total_cost: 200, start_ym: '2026-03', duration_months: 1, applies_to: '7' },
+      ],
       scenarios: [{ id: 7, name: 'Cut gym', type: 'adjustment', target_id: null, created_at: '' }],
       scenario_overrides: [
-        { id: 1, scenario_id: 7, item_type: 'bill', item_id: 2, override_amount: 0 },
-        { id: 2, scenario_id: 7, item_type: 'income', item_id: 1, override_amount: 2500 },
+        { id: 1, scenario_id: 7, item_type: 'bill', item_id: 2, override_amount: 0 }, // cancel gym
+        { id: 2, scenario_id: 7, item_type: 'income', item_id: 1, override_amount: 2500 }, // bump income
+        { id: 3, scenario_id: 7, item_type: 'bill', item_id: 3, override_amount: 250 }, // bump savings line
       ],
     };
-    const rp = resolveScenario(plan, 7);
+  }
+
+  it('applies overrides (0 cancels, value replaces, absent unchanged)', () => {
+    const rp = resolveScenario(basePlan(), 7, NOW);
     expect(rp.income[0].net_amount).toBe(2500);
     expect(rp.bills.find((b) => b.id === 2)!.active).toBe(false);
     expect(rp.bills.find((b) => b.id === 1)!.amount).toBe(500);
+    // savings line is a bill → covered by item_type 'bill'
+    expect(rp.bills.find((b) => b.id === 3)!.amount).toBe(250);
+    expect(rp.savingsRate).toBe(3);
+    expect(rp.nowYM).toBe(NOW);
+  });
+
+  it('filters events to the scenario (all + this id)', () => {
+    const rp = resolveScenario(basePlan(), 7, NOW);
+    expect(rp.events.map((e) => e.id).sort()).toEqual([1, 2]);
+  });
+
+  it('base plan (null scenario) applies no overrides and drops scenario-specific events', () => {
+    const rp = resolveScenario(basePlan(), null, NOW);
+    expect(rp.income[0].net_amount).toBe(2000);
+    expect(rp.bills.find((b) => b.id === 2)!.active).toBe(true);
+    expect(rp.events.map((e) => e.id)).toEqual([1]);
+    expect(rp.scenarioId).toBeNull();
   });
 });

@@ -24,7 +24,7 @@ import type {
   Income,
   IncomeOneoff,
   Bill,
-  SavingsTarget,
+  Target,
   PlanEvent,
   Scenario,
   ScenarioOverride,
@@ -39,6 +39,7 @@ const DEFAULT_SETTINGS: Settings = {
   projection_months_default: 24,
   currency: 'GBP',
   tax_year: '2026/27',
+  default_savings_rate: 0,
 };
 
 // SQLite stores booleans as 0/1; convert to real JS booleans for the contract.
@@ -54,7 +55,7 @@ export async function readState(db: D1Database): Promise<PlanState> {
     incomeRows,
     oneoffRows,
     billRows,
-    savingsRows,
+    targetRows,
     eventRows,
     scenarioRows,
     overrideRows,
@@ -63,7 +64,7 @@ export async function readState(db: D1Database): Promise<PlanState> {
     db.prepare('SELECT * FROM income').all<Record<string, unknown>>(),
     db.prepare('SELECT * FROM income_oneoff').all<Record<string, unknown>>(),
     db.prepare('SELECT * FROM bills').all<Record<string, unknown>>(),
-    db.prepare('SELECT * FROM savings_targets').all<Record<string, unknown>>(),
+    db.prepare('SELECT * FROM targets').all<Record<string, unknown>>(),
     db.prepare('SELECT * FROM events').all<Record<string, unknown>>(),
     db.prepare('SELECT * FROM scenarios').all<Record<string, unknown>>(),
     db.prepare('SELECT * FROM scenario_overrides').all<Record<string, unknown>>(),
@@ -76,6 +77,7 @@ export async function readState(db: D1Database): Promise<PlanState> {
         projection_months_default: Number(settingsRow.projection_months_default ?? 24),
         currency: String(settingsRow.currency ?? 'GBP'),
         tax_year: String(settingsRow.tax_year ?? '2026/27'),
+        default_savings_rate: Number(settingsRow.default_savings_rate ?? 0),
       }
     : { ...DEFAULT_SETTINGS };
 
@@ -98,7 +100,7 @@ export async function readState(db: D1Database): Promise<PlanState> {
     id: Number(r.id),
     name: String(r.name),
     gross_amount: Number(r.gross_amount),
-    month: Number(r.month),
+    month_ym: String(r.month_ym),
     pension_sacrifice_pct:
       r.pension_sacrifice_pct === null || r.pension_sacrifice_pct === undefined
         ? null
@@ -112,24 +114,24 @@ export async function readState(db: D1Database): Promise<PlanState> {
     amount: Number(r.amount),
     frequency: r.frequency as Bill['frequency'],
     active: toBool(r.active),
+    is_savings: toBool(r.is_savings),
+    balance: Number(r.balance),
+    track_actuals: toBool(r.track_actuals),
   }));
 
-  const savings_targets: SavingsTarget[] = (savingsRows.results ?? []).map((r) => ({
+  const targets: Target[] = (targetRows.results ?? []).map((r) => ({
     id: Number(r.id),
     name: String(r.name),
-    balance: Number(r.balance),
-    monthly_contribution: Number(r.monthly_contribution),
-    annual_rate: Number(r.annual_rate),
-    target_amount: r.target_amount === null || r.target_amount === undefined ? null : Number(r.target_amount),
-    target_month: r.target_month === null || r.target_month === undefined ? null : Number(r.target_month),
-    ring_fenced: toBool(r.ring_fenced),
+    target_amount: Number(r.target_amount),
+    target_ym: String(r.target_ym),
+    linked_bill_id: r.linked_bill_id === null || r.linked_bill_id === undefined ? null : Number(r.linked_bill_id),
   }));
 
   const events: PlanEvent[] = (eventRows.results ?? []).map((r) => ({
     id: Number(r.id),
     name: String(r.name),
     total_cost: Number(r.total_cost),
-    start_month: Number(r.start_month),
+    start_ym: String(r.start_ym),
     duration_months: Number(r.duration_months),
     applies_to: String(r.applies_to),
   }));
@@ -156,7 +158,7 @@ export async function readState(db: D1Database): Promise<PlanState> {
     income,
     income_oneoff,
     bills,
-    savings_targets,
+    targets,
     events,
     scenarios,
     scenario_overrides,
@@ -175,7 +177,7 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
     'income',
     'income_oneoff',
     'bills',
-    'savings_targets',
+    'targets',
     'events',
     'scenarios',
     'scenario_overrides',
@@ -188,15 +190,16 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
   stmts.push(
     db
       .prepare(
-        `INSERT INTO settings (id, opening_cash, projection_months_default, currency, tax_year)
-         VALUES (1, ?, ?, ?, ?)
+        `INSERT INTO settings (id, opening_cash, projection_months_default, currency, tax_year, default_savings_rate)
+         VALUES (1, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            opening_cash = excluded.opening_cash,
            projection_months_default = excluded.projection_months_default,
            currency = excluded.currency,
-           tax_year = excluded.tax_year`,
+           tax_year = excluded.tax_year,
+           default_savings_rate = excluded.default_savings_rate`,
       )
-      .bind(s.opening_cash, s.projection_months_default, s.currency, s.tax_year),
+      .bind(s.opening_cash, s.projection_months_default, s.currency, s.tax_year, s.default_savings_rate),
   );
 
   // Re-insert every row with its client-supplied id EXACTLY (see header note).
@@ -228,10 +231,10 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
     stmts.push(
       db
         .prepare(
-          `INSERT INTO income_oneoff (id, name, gross_amount, month, pension_sacrifice_pct)
+          `INSERT INTO income_oneoff (id, name, gross_amount, month_ym, pension_sacrifice_pct)
            VALUES (?, ?, ?, ?, ?)`,
         )
-        .bind(r.id, r.name, r.gross_amount, r.month, r.pension_sacrifice_pct),
+        .bind(r.id, r.name, r.gross_amount, r.month_ym, r.pension_sacrifice_pct),
     );
   }
 
@@ -239,31 +242,31 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
     stmts.push(
       db
         .prepare(
-          `INSERT INTO bills (id, name, category, amount, frequency, active)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(r.id, r.name, r.category, r.amount, r.frequency, fromBool(r.active)),
-    );
-  }
-
-  for (const r of state.savings_targets ?? []) {
-    stmts.push(
-      db
-        .prepare(
-          `INSERT INTO savings_targets
-             (id, name, balance, monthly_contribution, annual_rate, target_amount, target_month, ring_fenced)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO bills (id, name, category, amount, frequency, active, is_savings, balance, track_actuals)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           r.id,
           r.name,
+          r.category,
+          r.amount,
+          r.frequency,
+          fromBool(r.active),
+          fromBool(r.is_savings),
           r.balance,
-          r.monthly_contribution,
-          r.annual_rate,
-          r.target_amount,
-          r.target_month,
-          fromBool(r.ring_fenced),
+          fromBool(r.track_actuals),
         ),
+    );
+  }
+
+  for (const r of state.targets ?? []) {
+    stmts.push(
+      db
+        .prepare(
+          `INSERT INTO targets (id, name, target_amount, target_ym, linked_bill_id)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .bind(r.id, r.name, r.target_amount, r.target_ym, r.linked_bill_id),
     );
   }
 
@@ -271,10 +274,10 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
     stmts.push(
       db
         .prepare(
-          `INSERT INTO events (id, name, total_cost, start_month, duration_months, applies_to)
+          `INSERT INTO events (id, name, total_cost, start_ym, duration_months, applies_to)
            VALUES (?, ?, ?, ?, ?, ?)`,
         )
-        .bind(r.id, r.name, r.total_cost, r.start_month, r.duration_months, r.applies_to),
+        .bind(r.id, r.name, r.total_cost, r.start_ym, r.duration_months, r.applies_to),
     );
   }
 

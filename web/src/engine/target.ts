@@ -1,35 +1,98 @@
-import type { SavingsTarget } from '../types';
+import type { Bill, ResolvedPlan, Target, TargetStatus } from '../types';
+import { normalizeFrequency } from './frequency';
+import { offsetToYM, ymToOffset } from '../lib/calendar';
 
-/**
- * Monthly contribution required to hit a savings goal, accounting for compound
- * interest at the target's annual rate.
- *
- *   r = annual_rate/12 ; n = monthsRemaining
- *   r == 0 -> (target - balance) / n
- *   else   -> (target - balance*(1+r)^n) * r / ((1+r)^n - 1)
- */
-export function requiredContribution(target: SavingsTarget, monthsRemaining: number): number {
-  const goal = target.target_amount ?? 0;
-  const n = Math.max(0, Math.floor(monthsRemaining));
-  if (n <= 0) return Math.max(0, goal - target.balance);
-
-  const r = (target.annual_rate || 0) / 100 / 12;
-  if (r === 0) return Math.max(0, (goal - target.balance) / n);
-
-  const growth = Math.pow(1 + r, n);
-  const needed = ((goal - target.balance * growth) * r) / (growth - 1);
-  return Math.max(0, needed);
+/** Monthly amount a bill (savings line) contributes when active, else 0. */
+export function monthlyBillAmount(bill: Bill): number {
+  return bill.active ? normalizeFrequency(bill.amount, bill.frequency) : 0;
 }
 
-/** Will this target hit its goal given current contributions? Returns the month it lands (1..n) or null. */
-export function monthGoalHit(target: SavingsTarget, horizon: number): number | null {
-  const goal = target.target_amount;
-  if (goal == null) return null;
-  const r = (target.annual_rate || 0) / 100 / 12;
-  let bal = target.balance;
-  for (let m = 1; m <= horizon; m++) {
-    bal = bal * (1 + r) + target.monthly_contribution;
-    if (bal >= goal) return m;
+/**
+ * Monthly contribution required to reach `targetAmount` from `currentBalance`
+ * over `monthsRemaining` months, compounding monthly at `annualRatePct`.
+ *
+ *   r = annualRatePct/100/12 ; n = monthsRemaining
+ *   n <= 0 -> max(0, target - balance)
+ *   r == 0 -> max(0, (target - balance) / n)
+ *   else   -> max(0, (target - balance*(1+r)^n) * r / ((1+r)^n - 1))
+ */
+export function requiredContribution(
+  targetAmount: number,
+  currentBalance: number,
+  monthsRemaining: number,
+  annualRatePct: number,
+): number {
+  const n = Math.floor(monthsRemaining);
+  if (n <= 0) return Math.max(0, targetAmount - currentBalance);
+
+  const r = annualRatePct / 100 / 12;
+  if (r === 0) return Math.max(0, (targetAmount - currentBalance) / n);
+
+  const growth = Math.pow(1 + r, n);
+  return Math.max(0, ((targetAmount - currentBalance * growth) * r) / (growth - 1));
+}
+
+/**
+ * Simulate a balance growing at `annualRatePct` (monthly compounding) with a
+ * fixed `monthlyContribution`. Returns the first offset (1..maxOffset) at which
+ * the balance reaches `targetAmount`, or null if it never does within maxOffset.
+ */
+export function monthGoalHitOffset(
+  currentBalance: number,
+  monthlyContribution: number,
+  annualRatePct: number,
+  targetAmount: number,
+  maxOffset: number,
+): number | null {
+  const r = annualRatePct / 100 / 12;
+  let bal = currentBalance;
+  for (let offset = 1; offset <= maxOffset; offset++) {
+    bal = bal * (1 + r) + monthlyContribution;
+    if (bal >= targetAmount) return offset;
   }
   return null;
+}
+
+/**
+ * Status of a savings goal against the resolved plan. Reads the linked savings
+ * line's balance/contribution (0 if unlinked), works out what's required to hit
+ * the goal by its deadline, and whether current contributions get there in time.
+ */
+export function targetStatus(target: Target, plan: ResolvedPlan): TargetStatus {
+  const linkedBill = plan.bills.find((b) => b.id === target.linked_bill_id) ?? null;
+  const currentBalance = linkedBill ? linkedBill.balance : 0;
+  const currentContribution = linkedBill ? monthlyBillAmount(linkedBill) : 0;
+
+  // offset 1 = this month; months from now until the deadline.
+  const deadlineOffset = ymToOffset(target.target_ym, plan.nowYM);
+  const monthsRemaining = Math.max(0, deadlineOffset - 1);
+
+  const requiredPerMonth = requiredContribution(
+    target.target_amount,
+    currentBalance,
+    monthsRemaining || 1,
+    plan.savingsRate,
+  );
+
+  const hitOffset = monthGoalHitOffset(
+    currentBalance,
+    currentContribution,
+    plan.savingsRate,
+    target.target_amount,
+    600,
+  );
+  const projectedHit = hitOffset ? offsetToYM(hitOffset, plan.nowYM) : null;
+  const onTrack = hitOffset !== null && hitOffset <= deadlineOffset;
+  const shortfallPerMonth = Math.max(0, requiredPerMonth - currentContribution);
+
+  return {
+    target,
+    monthsRemaining,
+    currentBalance,
+    currentContribution,
+    requiredPerMonth,
+    projectedHit,
+    onTrack,
+    shortfallPerMonth,
+  };
 }

@@ -1,21 +1,21 @@
 // ============================================================================
-// Shared TypeScript contract for the Budget & Scenario Planner.
-// EVERY part of the app (worker mirror, engine, UI) depends on these types.
-// Keep field names in lock-step with migrations/0001_init.sql.
+// Shared TypeScript contract for Money Dashboard.
+// Everything (worker mirror, engine, UI) depends on these types.
+// Keep field names in lock-step with the migrations.
 // ============================================================================
 
-export type Frequency = 'Monthly' | 'Quarterly' | 'Annual' | 'Weekly' | '4-weekly';
+import type { YM } from './lib/calendar';
 
+export type Frequency = 'Monthly' | 'Quarterly' | 'Annual' | 'Weekly' | '4-weekly';
 export const FREQUENCIES: Frequency[] = ['Monthly', 'Quarterly', 'Annual', 'Weekly', '4-weekly'];
 
 export type EntryMode = 'net' | 'gross';
 export type PensionType = 'salary_sacrifice' | 'net_pay' | 'relief_at_source';
 export type ScenarioType = 'adjustment' | 'target';
-export type ItemType = 'income' | 'bill' | 'savings';
+export type ItemType = 'income' | 'bill';
 
 // ----------------------------------------------------------------------------
-// Persisted entities (1:1 with DB rows; integers booleans become real booleans
-// after normalisation in the API client).
+// Persisted entities
 // ----------------------------------------------------------------------------
 
 export interface Settings {
@@ -24,6 +24,7 @@ export interface Settings {
   projection_months_default: number;
   currency: string;
   tax_year: string;
+  default_savings_rate: number; // global annual interest rate (%) for savings lines
 }
 
 export interface Income {
@@ -34,20 +35,23 @@ export interface Income {
   active: boolean;
   net_amount: number | null;
   gross_annual: number | null;
-  pension_rate: number | null;       // percent, e.g. 5 = 5%
+  pension_rate: number | null;
   pension_type: PensionType | null;
-  sacrifice_monthly: number | null;  // £/month of salary-sacrifice items (e.g. benefits)
-  tax_code: string | null;           // optional PAYE code (e.g. '1257L', 'BR', 'K475')
+  sacrifice_monthly: number | null;
+  tax_code: string | null;
 }
 
 export interface IncomeOneoff {
   id: number;
   name: string;
   gross_amount: number;
-  month: number;                     // 1..horizon offset from "now"
+  month_ym: YM; // absolute month, 'YYYY-MM'
   pension_sacrifice_pct: number | null;
 }
 
+// An "outgoing". A normal bill spends; a savings line (is_savings) sets money
+// aside — it still reduces available-to-spend but accrues into `balance` and is
+// reported as savings rather than spent.
 export interface Bill {
   id: number;
   name: string;
@@ -55,54 +59,51 @@ export interface Bill {
   amount: number;
   frequency: Frequency;
   active: boolean;
+  is_savings: boolean;
+  balance: number;        // accrued balance (savings lines only)
+  track_actuals: boolean; // opt-in: this (variable) line shows quick actual-spend logging
 }
 
-export interface SavingsTarget {
+// A lightweight savings goal overlay. Optionally tied to a savings line (bucket).
+export interface Target {
   id: number;
   name: string;
-  balance: number;
-  monthly_contribution: number;
-  annual_rate: number;               // percent, e.g. 4 = 4%
-  target_amount: number | null;      // set => goal
-  target_month: number | null;       // set => goal deadline (1..horizon)
-  ring_fenced: boolean;
+  target_amount: number;
+  target_ym: YM;                  // absolute deadline 'YYYY-MM'
+  linked_bill_id: number | null;  // a savings-line bill it fills
 }
 
 export interface PlanEvent {
   id: number;
   name: string;
   total_cost: number;
-  start_month: number;               // 1..horizon
+  start_ym: YM;          // absolute start month
   duration_months: number;
-  applies_to: string;                // 'all' | scenario id (as string)
+  applies_to: string;    // 'all' | scenario id (as string)
 }
 
 export interface Scenario {
   id: number;
   name: string;
   type: ScenarioType;
-  target_id: number | null;          // for 'target' scenarios: the savings_target id
+  target_id: number | null;
   created_at: string;
 }
 
 export interface ScenarioOverride {
   id: number;
   scenario_id: number;
-  item_type: ItemType;
+  item_type: ItemType;             // 'income' | 'bill' (savings lines are bills)
   item_id: number;
-  override_amount: number | null;    // NULL = unchanged, 0 = cancelled
+  override_amount: number | null;  // NULL = unchanged, 0 = cancelled
 }
-
-// ----------------------------------------------------------------------------
-// Whole-document plan (the payload of GET/PUT /api/state).
-// ----------------------------------------------------------------------------
 
 export interface PlanState {
   settings: Settings;
   income: Income[];
   income_oneoff: IncomeOneoff[];
   bills: Bill[];
-  savings_targets: SavingsTarget[];
+  targets: Target[];
   events: PlanEvent[];
   scenarios: Scenario[];
   scenario_overrides: ScenarioOverride[];
@@ -113,24 +114,21 @@ export interface PlanState {
 // ----------------------------------------------------------------------------
 
 export interface TaxBand {
-  threshold: number;                 // taxable income (after allowances) where this rate starts
-  rate: number;                      // fraction, e.g. 0.20
+  threshold: number;
+  rate: number;
 }
-
 export interface NiThresholds {
-  primary: number;                   // annualised primary threshold
-  upper: number;                     // annualised upper earnings limit
-  taper_start?: number;              // PA taper start (default 100000)
+  primary: number;
+  upper: number;
+  taper_start?: number;
 }
-
 export interface NiRates {
-  main: number;                      // fraction between primary & upper
-  upper: number;                     // fraction above upper
+  main: number;
+  upper: number;
 }
-
 export interface TaxConfig {
   tax_year: string;
-  region: string;                    // 'rUK'
+  region: string;
   personal_allowance: number;
   bands: TaxBand[];
   ni_thresholds: NiThresholds;
@@ -138,14 +136,14 @@ export interface TaxConfig {
 }
 
 // ----------------------------------------------------------------------------
-// Snapshots & actuals (over-time data)
+// Snapshots & actuals (over-time data) — actuals are now opt-in per line.
 // ----------------------------------------------------------------------------
 
 export interface Snapshot {
   id: number;
   taken_on: string;
   label: string | null;
-  payload: string;                   // JSON-stringified PlanState at capture time
+  payload: string;
   m_free_cash: number | null;
   m_bills: number | null;
   m_cash_bal: number | null;
@@ -154,7 +152,7 @@ export interface Snapshot {
 
 export interface Actual {
   id: number;
-  period: string;                    // 'YYYY-MM'
+  period: string; // 'YYYY-MM'
   bill_id: number;
   planned_amount: number | null;
   actual_amount: number | null;
@@ -172,14 +170,12 @@ export interface ObInstitution {
   logo?: string;
   transaction_total_days?: string;
 }
-
 export interface ObRequisition {
   id: string;
-  link: string;                      // consent URL the user visits
+  link: string;
   status: string;
   accounts: string[];
 }
-
 export interface ObAccount {
   id: string;
   iban?: string;
@@ -187,108 +183,104 @@ export interface ObAccount {
   ownerName?: string;
   currency?: string;
 }
-
 export interface ObTransaction {
   transactionId?: string;
   bookingDate?: string;
   valueDate?: string;
-  amount: number;                    // signed; negative = money out
+  amount: number;
   currency: string;
   description: string;
   raw?: unknown;
 }
 
 // ============================================================================
-// ENGINE CONTRACT — pure TS, runs client-side. Implemented in web/src/engine/*.
-// UI and tests import from 'web/src/engine'. Signatures are frozen here.
+// ENGINE CONTRACT — pure TS, client-side. Implemented in web/src/engine/*.
 // ============================================================================
 
-// Per-month projection point for the whole plan / a scenario.
 export interface ProjectionPoint {
-  month: number;                     // 1..horizon
-  income: number;                    // monthly income (normalised)
-  bills: number;                     // monthly bills (normalised)
-  events: number;                    // event cost falling in this month
-  contributions: number;            // total savings contributions this month
-  netFlow: number;                   // income - bills - events - contributions
-  cash: number;                      // running cash balance
-  savingsTotal: number;             // sum of all target balances this month
-}
-
-export interface TargetProjection {
-  targetId: number;
-  name: string;
-  balances: number[];                // balance at end of each month, length = horizon
-  endBalance: number;
+  offset: number;        // 1..horizon
+  ym: YM;                // absolute month for this point
+  income: number;        // monthly net income (+ any bonus this month)
+  spend: number;         // non-savings bills
+  saved: number;         // savings-line contributions this month
+  events: number;        // event cost this month
+  netFlow: number;       // income - spend - saved - events
+  cash: number;          // running cash balance
+  savingsTotal: number;  // sum of savings-line balances this month
 }
 
 export interface ProjectionResult {
   points: ProjectionPoint[];
-  targets: TargetProjection[];
-  lowestCash: { month: number; value: number };
+  lowestCash: { offset: number; ym: YM; value: number };
   horizon: number;
+  nowYM: YM;
 }
 
-// Effective (resolved) plan lines after applying a scenario's overrides.
-// Overridden lines are normalised to a fixed Monthly value (net for income).
+// Effective plan after applying a scenario's overrides + the projection anchor.
 export interface ResolvedPlan {
   income: Income[];
   income_oneoff: IncomeOneoff[];
-  bills: Bill[];
-  savings_targets: SavingsTarget[];
-  events: PlanEvent[];               // events applicable to this scenario (+ 'all')
+  bills: Bill[];              // includes savings lines (is_savings)
+  events: PlanEvent[];
   opening_cash: number;
+  savingsRate: number;       // global annual % for savings lines
+  nowYM: YM;
   scenarioId: number | null;
+}
+
+export interface TargetStatus {
+  target: Target;
+  monthsRemaining: number;
+  currentBalance: number;       // linked savings line balance (0 if unlinked)
+  currentContribution: number;  // linked savings line monthly amount (0 if unlinked)
+  requiredPerMonth: number;     // to hit target by deadline (with global interest)
+  projectedHit: YM | null;      // when current contributions actually reach the goal
+  onTrack: boolean;             // projectedHit on or before the deadline
+  shortfallPerMonth: number;    // extra £/mo needed (0 if on track)
 }
 
 export interface PayBreakdown {
   grossAnnual: number;
-  pensionAnnual: number;             // total pension/sacrifice removed pre-take-home
+  pensionAnnual: number;
   taxableIncome: number;
   incomeTax: number;
   nationalInsurance: number;
-  personalAllowance: number;         // after taper
+  personalAllowance: number;
   netAnnual: number;
   netMonthly: number;
-  reliefAtSourceTopUp: number;       // basic-rate relief added to the pot (RAS only)
-}
-
-export interface EngineApi {
-  normalizeFrequency(amount: number, f: Frequency): number;
-  project(plan: ResolvedPlan, horizon: number, taxConfig: TaxConfig | null): ProjectionResult;
-  resolveScenario(plan: PlanState, scenarioId: number | null): ResolvedPlan;
-  requiredContribution(target: SavingsTarget, monthsRemaining: number): number;
-  netFromGross(
-    grossAnnual: number,
-    pensionRate: number,             // percent
-    pensionType: PensionType,
-    sacrificeMonthly: number,
-    taxConfig: TaxConfig,
-    taxCode?: string | null,
-  ): PayBreakdown;
+  reliefAtSourceTopUp: number;
 }
 
 // ----------------------------------------------------------------------------
 // Helpers / defaults
 // ----------------------------------------------------------------------------
 
+import { currentYM } from './lib/calendar';
+
 export const emptyPlan = (): PlanState => ({
-  settings: { id: 1, opening_cash: 0, projection_months_default: 24, currency: 'GBP', tax_year: '2026/27' },
+  settings: {
+    id: 1,
+    opening_cash: 0,
+    projection_months_default: 24,
+    currency: 'GBP',
+    tax_year: '2026/27',
+    default_savings_rate: 0,
+  },
   income: [],
   income_oneoff: [],
   bills: [],
-  savings_targets: [],
+  targets: [],
   events: [],
   scenarios: [],
   scenario_overrides: [],
 });
 
+export const todayYM = (): YM => currentYM();
+
 export const gbp = (n: number): string =>
-  new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency: 'GBP',
-    maximumFractionDigits: 0,
-  }).format(Number.isFinite(n) ? n : 0);
+  new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(
+    Number.isFinite(n) ? n : 0,
+  );
 
 export const gbp2 = (n: number): string =>
   new Intl.NumberFormat('en-GB', {

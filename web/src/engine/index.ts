@@ -6,4 +6,4 @@ export { netFromGross, parseTaxCode } from './paycalc';
 export { monthlyNetIncome, totalMonthlyIncome, netBonus } from './income';
 export { resolveScenario } from './scenario';
 export { project } from './projection';
-export { requiredContribution, monthGoalHit } from './target';
+export { monthlyBillAmount, requiredContribution, monthGoalHitOffset, targetStatus } from './target';
