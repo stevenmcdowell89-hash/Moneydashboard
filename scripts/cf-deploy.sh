@@ -14,6 +14,9 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+echo "→ Building the React app (web/dist)…"
+npm run build --workspace web
+
 echo "→ Applying D1 migrations (remote, idempotent)…"
 npx wrangler d1 migrations apply budget_planner --remote
 
