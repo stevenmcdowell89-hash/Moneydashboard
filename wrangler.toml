@@ -1,0 +1,25 @@
+# Cloudflare Worker — auth + persistence + open-banking proxy ONLY.
+# No forecast logic here; the engine runs client-side.
+name = "budget-planner-api"
+main = "worker/src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 database binding. Create with:
+#   wrangler d1 create budget_planner
+# then paste the returned database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "budget_planner"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[vars]
+# Cloudflare Access — set these to your team's values (README §Access).
+# The Worker validates Cf-Access-Jwt-Assertion against this team's certs.
+CF_ACCESS_TEAM_DOMAIN = "REPLACE_WITH_your-team.cloudflareaccess.com"
+CF_ACCESS_AUD = "REPLACE_WITH_your_access_application_aud_tag"
+
+# Secrets (set via `wrangler secret put NAME`, never commit):
+#   GOCARDLESS_SECRET_ID
+#   GOCARDLESS_SECRET_KEY

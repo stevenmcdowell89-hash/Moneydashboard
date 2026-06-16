@@ -1,0 +1,24 @@
+{
+  "name": "budget-scenario-planner",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Private single-user budgeting, forecasting and scenario-modelling app (Cloudflare).",
+  "workspaces": [
+    "web",
+    "worker"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace web",
+    "dev:worker": "npm run dev --workspace worker",
+    "build": "npm run build --workspace web",
+    "test": "npm run test --workspace web",
+    "typecheck": "npm run typecheck --workspace web && npm run typecheck --workspace worker",
+    "db:migrate:local": "wrangler d1 migrations apply budget_planner --local",
+    "db:migrate:remote": "wrangler d1 migrations apply budget_planner --remote",
+    "deploy:worker": "npm run deploy --workspace worker",
+    "deploy:pages": "npm run build --workspace web && wrangler pages deploy web/dist --project-name budget-planner"
+  },
+  "devDependencies": {
+    "wrangler": "^4.101.0"
+  }
+}
