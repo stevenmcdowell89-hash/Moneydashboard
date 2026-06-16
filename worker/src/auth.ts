@@ -21,6 +21,7 @@ export interface Env {
   ASSETS?: Fetcher;
   CF_ACCESS_TEAM_DOMAIN?: string;
   CF_ACCESS_AUD?: string;
+  CF_ACCESS_ALLOWED_EMAIL?: string;
   DEV_BYPASS_AUTH?: string;
   GOCARDLESS_SECRET_ID?: string;
   GOCARDLESS_SECRET_KEY?: string;
@@ -165,14 +166,18 @@ function extractToken(request: Request): string | null {
  */
 export async function verifyAccess(request: Request, env: Env): Promise<boolean> {
   // Dev bypass: only when explicitly enabled AND Access is not configured.
-  if (env.DEV_BYPASS_AUTH === 'true' && isPlaceholder(env.CF_ACCESS_AUD)) {
+  const audConfigured = !isPlaceholder(env.CF_ACCESS_AUD);
+  const emailConfigured = !isPlaceholder(env.CF_ACCESS_ALLOWED_EMAIL);
+
+  if (env.DEV_BYPASS_AUTH === 'true' && !audConfigured && !emailConfigured) {
     return true;
   }
 
-  if (isPlaceholder(env.CF_ACCESS_AUD)) {
-    // Access AUD not configured and no dev bypass -> reject.
-    // (Team domain is optional: when unset we derive the trusted issuer from
-    //  the token's `iss`, restricted to *.cloudflareaccess.com.)
+  if (!audConfigured && !emailConfigured) {
+    // Access not configured (no AUD and no allowed email) and no dev bypass.
+    // Reject so the API is never wide open. (Team domain stays optional: when
+    // unset we derive the trusted issuer from the token's `iss`, restricted to
+    // *.cloudflareaccess.com.)
     return false;
   }
 
@@ -247,11 +252,22 @@ export async function verifyAccess(request: Request, env: Env): Promise<boolean>
 
   // iss was already validated above (and used to fetch the signing keys).
 
-  // aud must include our application AUD tag.
-  const aud = payload.aud;
-  const expectedAud = (env.CF_ACCESS_AUD || '').trim();
-  const audList = Array.isArray(aud) ? aud : aud ? [aud] : [];
-  if (!audList.includes(expectedAud)) return false;
+  // Scope acceptance to THIS owner. We require every configured check to pass;
+  // at least one of (AUD, allowed email) is configured (enforced earlier).
+  //  - AUD: the token's audience must include our application's AUD tag.
+  //  - Email: the authenticated identity must match the owner's email.
+  if (audConfigured) {
+    const aud = payload.aud;
+    const expectedAud = (env.CF_ACCESS_AUD || '').trim();
+    const audList = Array.isArray(aud) ? aud : aud ? [aud] : [];
+    if (!audList.includes(expectedAud)) return false;
+  }
+
+  if (emailConfigured) {
+    const expectedEmail = (env.CF_ACCESS_ALLOWED_EMAIL || '').trim().toLowerCase();
+    const tokenEmail = (payload.email || '').trim().toLowerCase();
+    if (!tokenEmail || tokenEmail !== expectedEmail) return false;
+  }
 
   return true;
 }

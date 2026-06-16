@@ -25,8 +25,15 @@ database_id = "601287bc-202a-4cdd-ab1d-733e55476132"
 migrations_dir = "migrations"
 
 [vars]
-# Cloudflare Access — set these to your team's values (README §Access).
-# The Worker validates Cf-Access-Jwt-Assertion against this team's certs.
+# Cloudflare Access. The Cloudflare Access application in front of this Worker is
+# the primary gate (it blocks anyone who isn't you before requests arrive). The
+# Worker then validates the Access login token as a second layer: it accepts a
+# request only when the authenticated identity matches CF_ACCESS_ALLOWED_EMAIL.
+#
+# Team domain is auto-derived from the token issuer (restricted to
+# *.cloudflareaccess.com), so it's optional. Setting CF_ACCESS_AUD adds an extra
+# app-specific check if you ever want it, but the email check is sufficient.
+CF_ACCESS_ALLOWED_EMAIL = "steven.mcdowell.89@gmail.com"
 CF_ACCESS_TEAM_DOMAIN = "REPLACE_WITH_your-team.cloudflareaccess.com"
 CF_ACCESS_AUD = "REPLACE_WITH_your_access_application_aud_tag"
 
