@@ -245,7 +245,11 @@ export default {
     const url = new URL(request.url);
     const { pathname } = url;
 
+    // Non-API requests serve the React SPA from the static-assets binding.
+    // (Asset files are normally served before the Worker runs; this is the
+    // fallback for client routes — SPA handling returns index.html.)
     if (!pathname.startsWith('/api/')) {
+      if (env.ASSETS) return env.ASSETS.fetch(request);
       return error('Not found', 404);
     }
 

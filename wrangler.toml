@@ -1,13 +1,22 @@
-# Cloudflare Worker — auth + persistence + open-banking proxy ONLY.
-# No forecast logic here; the engine runs client-side.
-name = "budget-planner-api"
+# Single Cloudflare Worker that serves BOTH the React app (static assets) and
+# the JSON API (auth + D1 persistence + open-banking proxy). One deploy, one
+# origin, one Cloudflare Access app. No forecast logic here — the engine runs
+# client-side. The GitHub Actions deploy workflow injects database_id for you.
+name = "budget-planner"
 main = "worker/src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# D1 database binding. Create with:
-#   wrangler d1 create budget_planner
-# then paste the returned database_id below.
+# Static assets: the built React SPA. `wrangler deploy` uploads web/dist and
+# serves it; non-matching, non-/api routes fall back to index.html (SPA).
+[assets]
+directory = "web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# D1 database binding. The deploy workflow runs `wrangler d1 create budget_planner`
+# (idempotent) and rewrites database_id below before deploying. To do it by hand:
+#   wrangler d1 create budget_planner   # then paste the id here
 [[d1_databases]]
 binding = "DB"
 database_name = "budget_planner"

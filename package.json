@@ -15,8 +15,7 @@
     "typecheck": "npm run typecheck --workspace web && npm run typecheck --workspace worker",
     "db:migrate:local": "wrangler d1 migrations apply budget_planner --local",
     "db:migrate:remote": "wrangler d1 migrations apply budget_planner --remote",
-    "deploy:worker": "npm run deploy --workspace worker",
-    "deploy:pages": "npm run build --workspace web && wrangler pages deploy web/dist --project-name budget-planner"
+    "deploy": "npm run build --workspace web && bash scripts/cf-deploy.sh"
   },
   "devDependencies": {
     "wrangler": "^4.101.0"
