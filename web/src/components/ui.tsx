@@ -1,12 +1,32 @@
 // Shared UI primitives. Every screen imports from here for a consistent look.
 // Tailwind-only, mobile-first. No external UI deps.
 
+import { useEffect, useState } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
 } from 'react';
+
+// Numeric inputs keep their own text state so a value of 0 shows as an empty
+// field with a placeholder (no hard "0" to delete), and partial entries like
+// "0." / "1." while typing aren't clobbered. External changes (e.g. a slider)
+// still sync in.
+function useNumericText(value: number | null | undefined, onChange: (n: number) => void) {
+  const v = value ?? 0;
+  const [text, setText] = useState(v === 0 ? '' : String(v));
+  useEffect(() => {
+    const parsed = text === '' ? 0 : Number(text);
+    if (parsed !== v) setText(v === 0 ? '' : String(v));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v]);
+  const handle = (t: string) => {
+    setText(t);
+    onChange(t === '' ? 0 : Number(t));
+  };
+  return { text, handle };
+}
 
 export function Card({
   children,
@@ -82,8 +102,8 @@ export function MoneyInput({
   value,
   onChange,
   className = '',
-  placeholder,
-  step = '1',
+  placeholder = '0',
+  step = 'any',
 }: {
   value: number | null | undefined;
   onChange: (n: number) => void;
@@ -91,6 +111,7 @@ export function MoneyInput({
   placeholder?: string;
   step?: string;
 }) {
+  const { text, handle } = useNumericText(value, onChange);
   return (
     <div className={`relative ${className}`}>
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">£</span>
@@ -99,10 +120,47 @@ export function MoneyInput({
         inputMode="decimal"
         step={step}
         placeholder={placeholder}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+        value={text}
+        onChange={(e) => handle(e.target.value)}
         className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-7 pr-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-blue-100"
       />
+    </div>
+  );
+}
+
+// Plain numeric field (percentages, counts) with the same no-hardcoded-0 behaviour.
+export function NumberInput({
+  value,
+  onChange,
+  className = '',
+  placeholder = '0',
+  step = 'any',
+  suffix,
+}: {
+  value: number | null | undefined;
+  onChange: (n: number) => void;
+  className?: string;
+  placeholder?: string;
+  step?: string;
+  suffix?: string;
+}) {
+  const { text, handle } = useNumericText(value, onChange);
+  return (
+    <div className={`relative ${className}`}>
+      <input
+        type="number"
+        inputMode="decimal"
+        step={step}
+        placeholder={placeholder}
+        value={text}
+        onChange={(e) => handle(e.target.value)}
+        className={`w-full rounded-xl border border-slate-300 bg-white py-2 pl-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-blue-100 ${
+          suffix ? 'pr-8' : 'pr-3'
+        }`}
+      />
+      {suffix && (
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">{suffix}</span>
+      )}
     </div>
   );
 }

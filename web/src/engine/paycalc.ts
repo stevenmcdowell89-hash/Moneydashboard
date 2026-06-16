@@ -23,6 +23,67 @@ function taperedAllowance(adjustedNetIncome: number, pa: number, taperStart: num
   return Math.max(0, pa - reduction);
 }
 
+// A parsed PAYE tax code.
+type TaxCodeRule =
+  | { kind: 'allowance'; allowance: number } // L/M/N/T/0T — fixed tax-free allowance, no taper
+  | { kind: 'addTaxable'; add: number }       // K codes — negative allowance, adds to taxable
+  | { kind: 'flat'; rate: number }            // BR/D0/D1 — whole income at one rate, no allowance
+  | { kind: 'noTax' };                        // NT — no tax
+
+// Parse a UK tax code. Returns null for blank/unrecognised codes (caller then
+// falls back to the standard allowance + taper). The number part × 10 is the
+// tax-free allowance (e.g. 1257L → £12,570). W1/M1/X (non-cumulative) suffixes
+// are ignored for this annual estimate.
+export function parseTaxCode(raw: string | null | undefined): TaxCodeRule | null {
+  if (!raw) return null;
+  let c = raw.trim().toUpperCase().replace(/\s+/g, '');
+  if (!c) return null;
+  c = c.replace(/(W1|M1|X)$/, '');
+  if (c === 'NT') return { kind: 'noTax' };
+  if (c === 'BR') return { kind: 'flat', rate: 0.2 };
+  if (c === 'D0') return { kind: 'flat', rate: 0.4 };
+  if (c === 'D1') return { kind: 'flat', rate: 0.45 };
+  if (c === '0T') return { kind: 'allowance', allowance: 0 };
+  const k = c.match(/^K(\d+)$/);
+  if (k) return { kind: 'addTaxable', add: Number(k[1]) * 10 };
+  const m = c.match(/^(\d+)[LMNT]$/);
+  if (m) return { kind: 'allowance', allowance: Number(m[1]) * 10 };
+  return null;
+}
+
+// Compute personal allowance, taxable income and income tax for the income
+// subject to tax (`base` = pay after sacrifice/NI-able adjustments, net of
+// pre-tax pension), honouring an optional tax code.
+function computeIncomeTax(
+  base: number,
+  taxConfig: TaxConfig,
+  taperStart: number,
+  rule: TaxCodeRule | null,
+): { personalAllowance: number; taxableIncome: number; incomeTax: number } {
+  if (rule) {
+    switch (rule.kind) {
+      case 'noTax':
+        return { personalAllowance: base, taxableIncome: 0, incomeTax: 0 };
+      case 'flat': {
+        const taxable = Math.max(0, base);
+        return { personalAllowance: 0, taxableIncome: taxable, incomeTax: taxable * rule.rate };
+      }
+      case 'allowance': {
+        const taxable = Math.max(0, base - rule.allowance);
+        return { personalAllowance: rule.allowance, taxableIncome: taxable, incomeTax: bandedTax(taxable, taxConfig.bands) };
+      }
+      case 'addTaxable': {
+        const taxable = Math.max(0, base + rule.add);
+        return { personalAllowance: 0, taxableIncome: taxable, incomeTax: bandedTax(taxable, taxConfig.bands) };
+      }
+    }
+  }
+  // Default: standard allowance with the >£100k taper.
+  const personalAllowance = taperedAllowance(base, taxConfig.personal_allowance, taperStart);
+  const taxableIncome = Math.max(0, base - personalAllowance);
+  return { personalAllowance, taxableIncome, incomeTax: bandedTax(taxableIncome, taxConfig.bands) };
+}
+
 function employeeNI(niablePay: number, cfg: TaxConfig): number {
   const { primary, upper } = cfg.ni_thresholds;
   const { main, upper: upperRate } = cfg.ni_rates;
@@ -51,6 +112,7 @@ export function netFromGross(
   pensionType: PensionType,
   sacrificeMonthly: number,
   taxConfig: TaxConfig,
+  taxCode?: string | null,
 ): PayBreakdown {
   const gross = Math.max(0, grossAnnual || 0);
   const rate = Math.max(0, pensionRate || 0) / 100;
@@ -81,12 +143,11 @@ export function netFromGross(
 
   payForTaxNi = Math.max(0, payForTaxNi);
 
-  // Adjusted net income for taper uses income net of pre-tax pension & sacrifice.
-  const adjustedNetIncome = Math.max(0, payForTaxNi - preTaxPension);
-  const personalAllowance = taperedAllowance(adjustedNetIncome, taxConfig.personal_allowance, taperStart);
-
-  const taxableIncome = Math.max(0, payForTaxNi - preTaxPension - personalAllowance);
-  const incomeTax = bandedTax(taxableIncome, taxConfig.bands);
+  // Income subject to tax (net of pre-tax pension & sacrifice). A tax code, if
+  // given, sets the allowance/treatment; otherwise the standard taper applies.
+  const base = Math.max(0, payForTaxNi - preTaxPension);
+  const rule = parseTaxCode(taxCode);
+  const { personalAllowance, taxableIncome, incomeTax } = computeIncomeTax(base, taxConfig, taperStart, rule);
   const nationalInsurance = employeeNI(payForTaxNi, taxConfig);
 
   const pensionAnnual = takeHomePensionDeduction;

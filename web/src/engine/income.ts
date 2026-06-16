@@ -13,6 +13,7 @@ export function monthlyNetIncome(income: Income, taxConfig: TaxConfig | null): n
       income.pension_type ?? 'relief_at_source',
       income.sacrifice_monthly ?? 0,
       taxConfig,
+      income.tax_code,
     );
     return b.netMonthly;
   }

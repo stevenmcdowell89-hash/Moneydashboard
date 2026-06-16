@@ -67,6 +67,43 @@ describe('netFromGross (known payslip, 2026/27 rUK)', () => {
     expect(b.nationalInsurance).toBeCloseTo(4410.6, 2);
     expect(b.netAnnual).toBeCloseTo(76157.4, 2);
   });
+
+  it('honours a tax code: 1257L matches the default allowance', () => {
+    const code = netFromGross(50000, 0, 'relief_at_source', 0, TAX, '1257L');
+    const dflt = netFromGross(50000, 0, 'relief_at_source', 0, TAX);
+    expect(code.personalAllowance).toBe(12570);
+    expect(code.incomeTax).toBeCloseTo(dflt.incomeTax, 2);
+  });
+
+  it('honours a tax code: BR taxes everything at 20% with no allowance', () => {
+    const b = netFromGross(50000, 0, 'relief_at_source', 0, TAX, 'BR');
+    expect(b.personalAllowance).toBe(0);
+    expect(b.incomeTax).toBeCloseTo(10000, 2); // 50000 * 20%
+  });
+
+  it('honours a tax code: 0T removes the allowance but keeps the bands', () => {
+    const b = netFromGross(50000, 0, 'relief_at_source', 0, TAX, '0T');
+    expect(b.personalAllowance).toBe(0);
+    // 37700*0.2 + (50000-37700)*0.4 = 7540 + 4920 = 12460
+    expect(b.incomeTax).toBeCloseTo(12460, 2);
+  });
+
+  it('honours a tax code: K475 adds £4,750 to taxable income', () => {
+    const b = netFromGross(50000, 0, 'relief_at_source', 0, TAX, 'K475');
+    // taxable = 50000 + 4750 = 54750 → 37700*0.2 + 17050*0.4 = 7540 + 6820 = 14360
+    expect(b.personalAllowance).toBe(0);
+    expect(b.incomeTax).toBeCloseTo(14360, 2);
+  });
+
+  it('honours a tax code: NT means no tax', () => {
+    const b = netFromGross(50000, 0, 'relief_at_source', 0, TAX, 'NT');
+    expect(b.incomeTax).toBe(0);
+  });
+
+  it('ignores W1/M1 emergency suffixes', () => {
+    const a = netFromGross(50000, 0, 'relief_at_source', 0, TAX, '1257L W1');
+    expect(a.personalAllowance).toBe(12570);
+  });
 });
 
 function resolved(partial: Partial<ResolvedPlan>): ResolvedPlan {
@@ -93,6 +130,7 @@ const income = (over: Partial<Income>): Income => ({
   pension_rate: null,
   pension_type: null,
   sacrifice_monthly: null,
+  tax_code: null,
   ...over,
 });
 

@@ -37,6 +37,7 @@ export interface Income {
   pension_rate: number | null;       // percent, e.g. 5 = 5%
   pension_type: PensionType | null;
   sacrifice_monthly: number | null;  // £/month of salary-sacrifice items (e.g. benefits)
+  tax_code: string | null;           // optional PAYE code (e.g. '1257L', 'BR', 'K475')
 }
 
 export interface IncomeOneoff {
@@ -263,6 +264,7 @@ export interface EngineApi {
     pensionType: PensionType,
     sacrificeMonthly: number,
     taxConfig: TaxConfig,
+    taxCode?: string | null,
   ): PayBreakdown;
 }
 

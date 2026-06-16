@@ -13,7 +13,7 @@ import {
   type PensionType,
   type EntryMode,
 } from '../types';
-import { Card, Section, Button, TextInput, MoneyInput, Select, Toggle, Modal, EmptyState } from '../components/ui';
+import { Card, Section, Button, TextInput, MoneyInput, NumberInput, Select, Toggle, Modal, EmptyState } from '../components/ui';
 
 function Row({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
   return (
@@ -263,6 +263,7 @@ const blankIncome = (): Income => ({
   pension_rate: null,
   pension_type: null,
   sacrifice_monthly: null,
+  tax_code: null,
 });
 const blankBill = (): Bill => ({ id: nextTempId(), name: '', category: '', amount: 0, frequency: 'Monthly', active: true });
 const blankTarget = (): SavingsTarget => ({
@@ -305,7 +306,7 @@ function IncomeEditor({ value, onSave, onClose }: { value: Income; onSave: (i: I
         {v.entry_mode === 'net' ? (
           <div className="grid grid-cols-2 gap-3">
             <Field label="Amount">
-              <MoneyInput value={v.net_amount ?? 0} onChange={(n) => set({ net_amount: n })} />
+              <MoneyInput value={v.net_amount} onChange={(n) => set({ net_amount: n })} />
             </Field>
             <Field label="Frequency">
               <FrequencySelect value={v.frequency} onChange={(f) => set({ frequency: f })} />
@@ -314,15 +315,11 @@ function IncomeEditor({ value, onSave, onClose }: { value: Income; onSave: (i: I
         ) : (
           <>
             <Field label="Gross annual">
-              <MoneyInput value={v.gross_annual ?? 0} onChange={(n) => set({ gross_annual: n })} />
+              <MoneyInput value={v.gross_annual} onChange={(n) => set({ gross_annual: n })} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Pension %">
-                <TextInput
-                  type="number"
-                  value={v.pension_rate ?? 0}
-                  onChange={(e) => set({ pension_rate: Number(e.target.value) })}
-                />
+                <NumberInput value={v.pension_rate} onChange={(n) => set({ pension_rate: n })} suffix="%" />
               </Field>
               <Field label="Pension type">
                 <Select value={v.pension_type ?? 'relief_at_source'} onChange={(e) => set({ pension_type: e.target.value as PensionType })}>
@@ -333,9 +330,19 @@ function IncomeEditor({ value, onSave, onClose }: { value: Income; onSave: (i: I
               </Field>
             </div>
             <Field label="Salary-sacrifice items (£/mo)">
-              <MoneyInput value={v.sacrifice_monthly ?? 0} onChange={(n) => set({ sacrifice_monthly: n })} />
+              <MoneyInput value={v.sacrifice_monthly} onChange={(n) => set({ sacrifice_monthly: n })} />
             </Field>
-            <p className="text-xs text-slate-400">Net is estimated from 2026/27 rUK tax — see the Pay calculator for the full breakdown.</p>
+            <Field label="Tax code (optional)">
+              <TextInput
+                value={v.tax_code ?? ''}
+                onChange={(e) => set({ tax_code: e.target.value.trim() === '' ? null : e.target.value.toUpperCase() })}
+                placeholder="1257L"
+              />
+            </Field>
+            <p className="text-xs text-slate-400">
+              Net is estimated from 2026/27 rUK tax. Leave the tax code blank to use the standard allowance (with the
+              £100k taper); enter one (e.g. 1257L, BR, K475, NT) to override it. See the Pay calculator for the full breakdown.
+            </p>
           </>
         )}
         <Toggle checked={v.active} onChange={(b) => set({ active: b })} label="Active" />
@@ -404,8 +411,8 @@ function TargetEditor({ value, onSave, onClose }: { value: SavingsTarget; onSave
             <MoneyInput value={v.monthly_contribution} onChange={(n) => set({ monthly_contribution: n })} />
           </Field>
         </div>
-        <Field label="Annual interest rate (%)">
-          <TextInput type="number" value={v.annual_rate} onChange={(e) => set({ annual_rate: Number(e.target.value) })} />
+        <Field label="Annual interest rate">
+          <NumberInput value={v.annual_rate} onChange={(n) => set({ annual_rate: n })} suffix="%" />
         </Field>
         <Toggle
           checked={isGoal}
@@ -422,11 +429,7 @@ function TargetEditor({ value, onSave, onClose }: { value: SavingsTarget; onSave
               <MoneyInput value={v.target_amount ?? 0} onChange={(n) => set({ target_amount: n })} />
             </Field>
             <Field label="By month (offset)">
-              <TextInput
-                type="number"
-                value={v.target_month ?? 12}
-                onChange={(e) => set({ target_month: Number(e.target.value) })}
-              />
+              <NumberInput value={v.target_month ?? 12} onChange={(n) => set({ target_month: n })} placeholder="12" />
             </Field>
           </div>
         )}
@@ -458,10 +461,10 @@ function EventEditor({ value, onSave, onClose }: { value: PlanEvent; onSave: (e:
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start month">
-            <TextInput type="number" value={v.start_month} onChange={(e) => set({ start_month: Number(e.target.value) })} />
+            <NumberInput value={v.start_month} onChange={(n) => set({ start_month: n })} placeholder="1" />
           </Field>
           <Field label="Duration (months)">
-            <TextInput type="number" value={v.duration_months} onChange={(e) => set({ duration_months: Number(e.target.value) })} />
+            <NumberInput value={v.duration_months} onChange={(n) => set({ duration_months: n })} placeholder="1" />
           </Field>
         </div>
         <p className="text-xs text-slate-400">Cost is spread evenly across the duration.</p>

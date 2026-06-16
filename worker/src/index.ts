@@ -62,6 +62,7 @@ export interface Income {
   pension_rate: number | null;
   pension_type: PensionType | null;
   sacrifice_monthly: number | null;
+  tax_code: string | null;
 }
 
 export interface IncomeOneoff {

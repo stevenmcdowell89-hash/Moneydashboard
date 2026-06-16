@@ -91,6 +91,7 @@ export async function readState(db: D1Database): Promise<PlanState> {
     pension_type: (r.pension_type ?? null) as Income['pension_type'],
     sacrifice_monthly:
       r.sacrifice_monthly === null || r.sacrifice_monthly === undefined ? null : Number(r.sacrifice_monthly),
+    tax_code: r.tax_code === null || r.tax_code === undefined ? null : String(r.tax_code),
   }));
 
   const income_oneoff: IncomeOneoff[] = (oneoffRows.results ?? []).map((r) => ({
@@ -204,8 +205,8 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
       db
         .prepare(
           `INSERT INTO income
-             (id, name, entry_mode, frequency, active, net_amount, gross_annual, pension_rate, pension_type, sacrifice_monthly)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, name, entry_mode, frequency, active, net_amount, gross_annual, pension_rate, pension_type, sacrifice_monthly, tax_code)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           r.id,
@@ -218,6 +219,7 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
           r.pension_rate,
           r.pension_type,
           r.sacrifice_monthly,
+          r.tax_code ?? null,
         ),
     );
   }

@@ -137,10 +137,11 @@ function QuickCalc({ taxConfig }: { taxConfig: TaxConfig }) {
   const [rate, setRate] = useState(5);
   const [type, setType] = useState<PensionType>('relief_at_source');
   const [sacrifice, setSacrifice] = useState(0);
+  const [code, setCode] = useState('');
 
   const breakdown = useMemo(
-    () => netFromGross(gross, rate, type, sacrifice, taxConfig),
-    [gross, rate, type, sacrifice, taxConfig],
+    () => netFromGross(gross, rate, type, sacrifice, taxConfig, code || null),
+    [gross, rate, type, sacrifice, taxConfig, code],
   );
 
   return (
@@ -170,6 +171,9 @@ function QuickCalc({ taxConfig }: { taxConfig: TaxConfig }) {
         <LabeledField label="Salary sacrifice (£/mo)">
           <MoneyInput value={sacrifice} onChange={setSacrifice} step="10" />
         </LabeledField>
+        <LabeledField label="Tax code (optional)">
+          <TextInput value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="1257L" />
+        </LabeledField>
       </div>
       <BreakdownBody b={breakdown} />
     </Card>
@@ -197,8 +201,9 @@ function IncomeCard({
         income.pension_type ?? 'relief_at_source',
         income.sacrifice_monthly ?? 0,
         taxConfig,
+        income.tax_code,
       ),
-    [income.gross_annual, income.pension_rate, income.pension_type, income.sacrifice_monthly, taxConfig],
+    [income.gross_annual, income.pension_rate, income.pension_type, income.sacrifice_monthly, income.tax_code, taxConfig],
   );
 
   const type = income.pension_type ?? 'relief_at_source';
@@ -237,6 +242,13 @@ function IncomeCard({
             value={income.sacrifice_monthly}
             onChange={(n) => onChange({ sacrifice_monthly: n })}
             step="10"
+          />
+        </LabeledField>
+        <LabeledField label="Tax code (optional)">
+          <TextInput
+            value={income.tax_code ?? ''}
+            onChange={(e) => onChange({ tax_code: e.target.value.trim() === '' ? null : e.target.value.toUpperCase() })}
+            placeholder="1257L"
           />
         </LabeledField>
       </div>
