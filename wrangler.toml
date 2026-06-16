@@ -3,7 +3,7 @@
 # origin, one Cloudflare Access app. No forecast logic here — the engine runs
 # client-side. The Cloudflare Workers Builds deploy command (scripts/cf-deploy.sh)
 # creates the D1 database and injects database_id for you on each deploy.
-name = "budget-planner"
+name = "moneydashboard"
 main = "worker/src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]

@@ -14,7 +14,7 @@ from this Git repo.
   Worker also independently validates the Access JWT on every `/api/*` request.
 
 ```
-Browser ─► Cloudflare Access ─► Worker (budget-planner)
+Browser ─► Cloudflare Access ─► Worker (moneydashboard)
                                    ├─ "/"      → React app (web/dist via ASSETS)
                                    ├─ "/api/*" → JSON API ─► D1 (budget_planner)
                                    └────────────────────  ─► GoCardless (open banking)
@@ -39,7 +39,7 @@ deploy on its own servers every time you push.
      environment is already authenticated to your account, so no API token is
      needed.
 5. **Save and Deploy.** When it finishes, your app is live at the Worker's URL
-   (shown on the Worker page, e.g. `https://budget-planner.<your-subdomain>.workers.dev`).
+   (shown on the Worker page, e.g. `https://moneydashboard.<your-subdomain>.workers.dev`).
 
 > Prefer to do it by hand from a machine with Node? `npm install` then `npm run
 > deploy` runs the exact same steps (needs `npx wrangler login` first).
