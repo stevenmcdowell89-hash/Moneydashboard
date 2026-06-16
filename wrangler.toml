@@ -20,6 +20,12 @@ migrations_dir = "migrations"
 CF_ACCESS_TEAM_DOMAIN = "REPLACE_WITH_your-team.cloudflareaccess.com"
 CF_ACCESS_AUD = "REPLACE_WITH_your_access_application_aud_tag"
 
+# Local dev only: set to "true" to bypass Access JWT verification. This bypass
+# is honoured ONLY while CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_AUD are still the
+# placeholders above. NEVER set this in production. Recommended: keep it in
+# .dev.vars (gitignored) rather than committing it here.
+# DEV_BYPASS_AUTH = "true"
+
 # Secrets (set via `wrangler secret put NAME`, never commit):
 #   GOCARDLESS_SECRET_ID
 #   GOCARDLESS_SECRET_KEY

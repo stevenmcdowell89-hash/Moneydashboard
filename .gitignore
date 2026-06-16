@@ -8,3 +8,4 @@ coverage/
 web/dist/
 *.log
 .env
+*.tsbuildinfo
