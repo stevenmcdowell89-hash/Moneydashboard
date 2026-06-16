@@ -229,8 +229,10 @@ export interface ProjectionResult {
 }
 
 // Effective (resolved) plan lines after applying a scenario's overrides.
+// Overridden lines are normalised to a fixed Monthly value (net for income).
 export interface ResolvedPlan {
   income: Income[];
+  income_oneoff: IncomeOneoff[];
   bills: Bill[];
   savings_targets: SavingsTarget[];
   events: PlanEvent[];               // events applicable to this scenario (+ 'all')
@@ -252,7 +254,7 @@ export interface PayBreakdown {
 
 export interface EngineApi {
   normalizeFrequency(amount: number, f: Frequency): number;
-  project(plan: ResolvedPlan, horizon: number): ProjectionResult;
+  project(plan: ResolvedPlan, horizon: number, taxConfig: TaxConfig | null): ProjectionResult;
   resolveScenario(plan: PlanState, scenarioId: number | null): ResolvedPlan;
   requiredContribution(target: SavingsTarget, monthsRemaining: number): number;
   netFromGross(
