@@ -15,13 +15,13 @@ directory = "web/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
-# D1 database binding. The deploy workflow runs `wrangler d1 create budget_planner`
-# (idempotent) and rewrites database_id below before deploying. To do it by hand:
-#   wrangler d1 create budget_planner   # then paste the id here
+# D1 database binding. The database was created in Cloudflare (region WNAM); its
+# id is pinned here so every deploy binds the same DB. To recreate from scratch:
+#   wrangler d1 create budget_planner   # then paste the new id below
 [[d1_databases]]
 binding = "DB"
 database_name = "budget_planner"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "601287bc-202a-4cdd-ab1d-733e55476132"
 migrations_dir = "migrations"
 
 [vars]
