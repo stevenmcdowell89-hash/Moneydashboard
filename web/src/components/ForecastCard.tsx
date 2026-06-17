@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Area,
   AreaChart,
@@ -42,7 +42,9 @@ export function ForecastCard({
     .filter((t) => t.projectedHit)
     .map((t) => ({ label: formatYMShort(t.projectedHit as string), name: t.target.name }));
 
+  const hitYms = new Set(targets.map((t) => t.projectedHit).filter(Boolean) as string[]);
   const end = result.points[result.points.length - 1];
+  const [showTable, setShowTable] = useState(false);
 
   return (
     <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
@@ -109,6 +111,47 @@ export function ForecastCard({
           <span className={`font-semibold ${(end?.cash ?? 0) >= 0 ? 'text-ink' : 'text-bad'}`}>{gbp(end?.cash ?? 0)}</span>
         </div>
       </div>
+
+      <button onClick={() => setShowTable((s) => !s)} className="mt-2 w-full rounded-xl bg-slate-50 py-1.5 text-xs font-medium text-slate-500">
+        {showTable ? 'Hide' : 'Month-by-month'} detail
+      </button>
+      {showTable && (
+        <div className="mt-2 max-h-72 overflow-auto rounded-xl ring-1 ring-slate-100">
+          <table className="w-full text-right text-[11px] tabular-nums">
+            <thead className="sticky top-0 bg-white text-slate-400">
+              <tr>
+                <th className="px-2 py-1 text-left font-medium">Month</th>
+                <th className="px-2 py-1 font-medium">In</th>
+                <th className="px-2 py-1 font-medium">Spend</th>
+                <th className="px-2 py-1 font-medium">Saved</th>
+                <th className="px-2 py-1 font-medium">One-off</th>
+                <th className="px-2 py-1 font-medium">Net</th>
+                <th className="px-2 py-1 font-medium">Cash</th>
+                <th className="px-2 py-1 font-medium">Savings</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.points.map((p) => {
+                const low = p.offset === result.lowestCash.offset;
+                const hit = hitYms.has(p.ym);
+                return (
+                  <tr key={p.offset} className={`border-t border-slate-50 ${hit ? 'bg-green-50' : low ? 'bg-red-50' : ''}`}>
+                    <td className="px-2 py-1 text-left text-slate-500">{formatYMShort(p.ym)}</td>
+                    <td className="px-2 py-1">{gbp(p.income)}</td>
+                    <td className="px-2 py-1">{gbp(p.spend)}</td>
+                    <td className="px-2 py-1 text-good">{gbp(p.saved)}</td>
+                    <td className="px-2 py-1">{p.events ? gbp(p.events) : '–'}</td>
+                    <td className={`px-2 py-1 ${p.netFlow < 0 ? 'text-bad' : ''}`}>{gbp(p.netFlow)}</td>
+                    <td className={`px-2 py-1 font-medium ${p.cash < 0 ? 'text-bad' : 'text-ink'}`}>{gbp(p.cash)}</td>
+                    <td className="px-2 py-1">{gbp(p.savingsTotal)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="px-2 py-1 text-left text-[10px] text-slate-400">Green = a target is hit · red = lowest cash</p>
+        </div>
+      )}
     </div>
   );
 }

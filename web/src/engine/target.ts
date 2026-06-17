@@ -63,6 +63,10 @@ export function targetStatus(target: Target, plan: ResolvedPlan): TargetStatus {
   const currentBalance = linkedBill ? linkedBill.balance : 0;
   const currentContribution = linkedBill ? monthlyBillAmount(linkedBill) : 0;
 
+  // Effective annual rate: the linked savings line's override if present, else
+  // the global rate (also used when there's no linked bill).
+  const effRate = linkedBill?.rate_override ?? plan.savingsRate;
+
   // offset 1 = this month; months from now until the deadline.
   const deadlineOffset = ymToOffset(target.target_ym, plan.nowYM);
   const monthsRemaining = Math.max(0, deadlineOffset - 1);
@@ -71,13 +75,13 @@ export function targetStatus(target: Target, plan: ResolvedPlan): TargetStatus {
     target.target_amount,
     currentBalance,
     monthsRemaining || 1,
-    plan.savingsRate,
+    effRate,
   );
 
   const hitOffset = monthGoalHitOffset(
     currentBalance,
     currentContribution,
-    plan.savingsRate,
+    effRate,
     target.target_amount,
     600,
   );

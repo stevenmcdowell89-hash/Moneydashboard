@@ -40,8 +40,6 @@ export type { Env } from './auth';
 export type Frequency = 'Monthly' | 'Quarterly' | 'Annual' | 'Weekly' | '4-weekly';
 export type EntryMode = 'net' | 'gross';
 export type PensionType = 'salary_sacrifice' | 'net_pay' | 'relief_at_source';
-export type ScenarioType = 'adjustment' | 'target';
-export type ItemType = 'income' | 'bill';
 
 export interface Settings {
   id: 1;
@@ -84,6 +82,7 @@ export interface Bill {
   is_savings: boolean;
   balance: number;
   track_actuals: boolean;
+  rate_override: number | null;
 }
 
 export interface Target {
@@ -106,17 +105,8 @@ export interface PlanEvent {
 export interface Scenario {
   id: number;
   name: string;
-  type: ScenarioType;
-  target_id: number | null;
+  payload: string;
   created_at: string;
-}
-
-export interface ScenarioOverride {
-  id: number;
-  scenario_id: number;
-  item_type: ItemType;
-  item_id: number;
-  override_amount: number | null;
 }
 
 export interface PlanState {
@@ -127,7 +117,6 @@ export interface PlanState {
   targets: Target[];
   events: PlanEvent[];
   scenarios: Scenario[];
-  scenario_overrides: ScenarioOverride[];
 }
 
 export interface TaxBand {

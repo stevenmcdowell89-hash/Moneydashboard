@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useStore, nextTempId } from '../state/store';
+import { nextTempId } from '../state/store';
+import { usePlanScope } from '../state/scope';
 import { addMonths, currentYM, formatYMShort, makeYM, parseYM, MONTHS_LONG } from '../lib/calendar';
 import { gbp, type PlanEvent } from '../types';
 import { Button, MoneyInput, NumberInput, Select, TextInput } from './ui';
 
 function EventEditor({ ev, onClose }: { ev: PlanEvent; onClose: () => void }) {
-  const { update } = useStore();
+  const { update } = usePlanScope();
   const { y, m } = parseYM(ev.start_ym || currentYM());
   const patch = (p: Partial<PlanEvent>) =>
     update((d) => ({ ...d, events: d.events.map((e) => (e.id === ev.id ? { ...e, ...p } : e)) }));
@@ -55,7 +56,7 @@ function EventEditor({ ev, onClose }: { ev: PlanEvent; onClose: () => void }) {
 }
 
 export function EventsSection() {
-  const { plan, update } = useStore();
+  const { plan, update } = usePlanScope();
   const [openId, setOpenId] = useState<number | null>(null);
   const [show, setShow] = useState(false);
 

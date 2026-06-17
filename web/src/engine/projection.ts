@@ -18,18 +18,21 @@ const eventMonthly = (totalCost: number, duration: number) => (duration > 0 ? to
  *   income(m)  = monthly net income + any net bonus landing this month
  *   netFlow(m) = income - spend - saved - events
  *   cash(m)    = (m==1 ? opening_cash : cash(m-1)) + netFlow
- *   savings line balance(m) = prev*(1 + savingsRate/100/12) + monthlyAmount
+ *   savings line balance(m) = prev*(1 + (rate_override ?? savingsRate)/100/12) + monthlyAmount
  *   savingsTotal(m)         = sum of savings-line balances at month m
  */
 export function project(plan: ResolvedPlan, horizon: number, taxConfig: TaxConfig | null): ProjectionResult {
   const H = Math.max(1, Math.floor(horizon));
   const nowYM = plan.nowYM;
   const monthlyIncome = totalMonthlyIncome(plan.income, taxConfig);
-  const rate = plan.savingsRate / 100 / 12;
 
   // Partition bills.
   const spendBills = plan.bills.filter((b) => b.active && !b.is_savings);
   const savingsBills = plan.bills.filter((b) => b.active && b.is_savings);
+
+  // Per-line monthly rate: a savings line's own rate_override (%) when set,
+  // otherwise the global savingsRate.
+  const savingsRates = savingsBills.map((b) => (b.rate_override ?? plan.savingsRate) / 100 / 12);
 
   const spend = spendBills.reduce((s, b) => s + monthlyAmount(b), 0);
   const saved = savingsBills.reduce((s, b) => s + monthlyAmount(b), 0);
@@ -66,7 +69,7 @@ export function project(plan: ResolvedPlan, horizon: number, taxConfig: TaxConfi
     // Advance each savings-line balance one month, then sum.
     let savingsTotal = 0;
     for (let i = 0; i < balances.length; i++) {
-      balances[i] = balances[i] * (1 + rate) + monthlyAmount(savingsBills[i]);
+      balances[i] = balances[i] * (1 + savingsRates[i]) + monthlyAmount(savingsBills[i]);
       savingsTotal += balances[i];
     }
 

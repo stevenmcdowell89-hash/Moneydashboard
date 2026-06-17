@@ -27,7 +27,6 @@ import type {
   Target,
   PlanEvent,
   Scenario,
-  ScenarioOverride,
   Snapshot,
   Actual,
   TaxConfig,
@@ -58,7 +57,6 @@ export async function readState(db: D1Database): Promise<PlanState> {
     targetRows,
     eventRows,
     scenarioRows,
-    overrideRows,
   ] = await Promise.all([
     db.prepare('SELECT * FROM settings WHERE id = 1').first<Record<string, unknown>>(),
     db.prepare('SELECT * FROM income').all<Record<string, unknown>>(),
@@ -67,7 +65,6 @@ export async function readState(db: D1Database): Promise<PlanState> {
     db.prepare('SELECT * FROM targets').all<Record<string, unknown>>(),
     db.prepare('SELECT * FROM events').all<Record<string, unknown>>(),
     db.prepare('SELECT * FROM scenarios').all<Record<string, unknown>>(),
-    db.prepare('SELECT * FROM scenario_overrides').all<Record<string, unknown>>(),
   ]);
 
   const settings: Settings = settingsRow
@@ -117,6 +114,7 @@ export async function readState(db: D1Database): Promise<PlanState> {
     is_savings: toBool(r.is_savings),
     balance: Number(r.balance),
     track_actuals: toBool(r.track_actuals),
+    rate_override: r.rate_override === null || r.rate_override === undefined ? null : Number(r.rate_override),
   }));
 
   const targets: Target[] = (targetRows.results ?? []).map((r) => ({
@@ -139,18 +137,8 @@ export async function readState(db: D1Database): Promise<PlanState> {
   const scenarios: Scenario[] = (scenarioRows.results ?? []).map((r) => ({
     id: Number(r.id),
     name: String(r.name),
-    type: r.type as Scenario['type'],
-    target_id: r.target_id === null || r.target_id === undefined ? null : Number(r.target_id),
+    payload: r.payload == null ? '{}' : String(r.payload),
     created_at: String(r.created_at),
-  }));
-
-  const scenario_overrides: ScenarioOverride[] = (overrideRows.results ?? []).map((r) => ({
-    id: Number(r.id),
-    scenario_id: Number(r.scenario_id),
-    item_type: r.item_type as ScenarioOverride['item_type'],
-    item_id: Number(r.item_id),
-    override_amount:
-      r.override_amount === null || r.override_amount === undefined ? null : Number(r.override_amount),
   }));
 
   return {
@@ -161,7 +149,6 @@ export async function readState(db: D1Database): Promise<PlanState> {
     targets,
     events,
     scenarios,
-    scenario_overrides,
   };
 }
 
@@ -180,7 +167,6 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
     'targets',
     'events',
     'scenarios',
-    'scenario_overrides',
   ]) {
     stmts.push(db.prepare(`DELETE FROM ${table}`));
   }
@@ -242,8 +228,8 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
     stmts.push(
       db
         .prepare(
-          `INSERT INTO bills (id, name, category, amount, frequency, active, is_savings, balance, track_actuals)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO bills (id, name, category, amount, frequency, active, is_savings, balance, track_actuals, rate_override)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           r.id,
@@ -255,6 +241,7 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
           fromBool(r.is_savings),
           r.balance,
           fromBool(r.track_actuals),
+          r.rate_override ?? null,
         ),
     );
   }
@@ -285,21 +272,10 @@ export async function writeState(db: D1Database, state: PlanState): Promise<void
     stmts.push(
       db
         .prepare(
-          `INSERT INTO scenarios (id, name, type, target_id, created_at)
-           VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO scenarios (id, name, payload, created_at)
+           VALUES (?, ?, ?, ?)`,
         )
-        .bind(r.id, r.name, r.type, r.target_id, r.created_at ?? new Date().toISOString()),
-    );
-  }
-
-  for (const r of state.scenario_overrides ?? []) {
-    stmts.push(
-      db
-        .prepare(
-          `INSERT INTO scenario_overrides (id, scenario_id, item_type, item_id, override_amount)
-           VALUES (?, ?, ?, ?, ?)`,
-        )
-        .bind(r.id, r.scenario_id, r.item_type, r.item_id, r.override_amount),
+        .bind(r.id, r.name, r.payload, r.created_at ?? new Date().toISOString()),
     );
   }
 

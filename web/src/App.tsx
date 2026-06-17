@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { StoreProvider, useStore } from './state/store';
 import { Home } from './screens/Home';
+import { ScenariosWorkspace } from './screens/ScenariosWorkspace';
 
 function SaveIndicator() {
   const { saveState } = useStore();
@@ -31,9 +33,14 @@ function Shell() {
       </div>
     );
   }
+  const [view, setView] = useState<'home' | 'scenarios'>('home');
   return (
     <>
-      <Home />
+      {view === 'home' ? (
+        <Home onOpenScenarios={() => setView('scenarios')} />
+      ) : (
+        <ScenariosWorkspace onClose={() => setView('home')} />
+      )}
       <SaveIndicator />
     </>
   );

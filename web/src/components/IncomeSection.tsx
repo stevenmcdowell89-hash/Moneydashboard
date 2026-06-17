@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useStore, nextTempId } from '../state/store';
+import { nextTempId } from '../state/store';
+import { usePlanScope } from '../state/scope';
 import { monthlyNetIncome } from '../engine';
 import { FREQUENCIES, gbp, type Frequency, type Income } from '../types';
 import { Button, MoneyInput, NumberInput, Select, TextInput, Toggle } from './ui';
@@ -21,7 +22,7 @@ function blankIncome(): Income {
 }
 
 function IncomeEditor({ income, onClose, onOpenPay }: { income: Income; onClose: () => void; onOpenPay: (id: number) => void }) {
-  const { update } = useStore();
+  const { update } = usePlanScope();
   const patch = (p: Partial<Income>) =>
     update((d) => ({ ...d, income: d.income.map((i) => (i.id === income.id ? { ...i, ...p } : i)) }));
   const remove = () => {
@@ -92,7 +93,7 @@ function IncomeEditor({ income, onClose, onOpenPay }: { income: Income; onClose:
 }
 
 export function IncomeSection({ onOpenPay }: { onOpenPay: (id: number) => void }) {
-  const { plan, taxConfig, update } = useStore();
+  const { plan, taxConfig, update } = usePlanScope();
   const [openId, setOpenId] = useState<number | null>(null);
 
   const add = () => {

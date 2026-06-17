@@ -11,8 +11,6 @@ export const FREQUENCIES: Frequency[] = ['Monthly', 'Quarterly', 'Annual', 'Week
 
 export type EntryMode = 'net' | 'gross';
 export type PensionType = 'salary_sacrifice' | 'net_pay' | 'relief_at_source';
-export type ScenarioType = 'adjustment' | 'target';
-export type ItemType = 'income' | 'bill';
 
 // ----------------------------------------------------------------------------
 // Persisted entities
@@ -62,6 +60,7 @@ export interface Bill {
   is_savings: boolean;
   balance: number;        // accrued balance (savings lines only)
   track_actuals: boolean; // opt-in: this (variable) line shows quick actual-spend logging
+  rate_override: number | null; // savings line: annual % overriding the global default
 }
 
 // A lightweight savings goal overlay. Optionally tied to a savings line (bucket).
@@ -79,24 +78,20 @@ export interface PlanEvent {
   total_cost: number;
   start_ym: YM;          // absolute start month
   duration_months: number;
-  applies_to: string;    // 'all' | scenario id (as string)
+  applies_to: string;    // 'all' (base) — scenarios carry their own events in their copy
 }
 
+// A scenario is a full, independent copy of the editable plan, stored as JSON in
+// `payload`. Editing a scenario never touches the base plan.
 export interface Scenario {
   id: number;
   name: string;
-  type: ScenarioType;
-  target_id: number | null;
+  payload: string;       // JSON.stringify(ScenarioPlan)
   created_at: string;
 }
 
-export interface ScenarioOverride {
-  id: number;
-  scenario_id: number;
-  item_type: ItemType;             // 'income' | 'bill' (savings lines are bills)
-  item_id: number;
-  override_amount: number | null;  // NULL = unchanged, 0 = cancelled
-}
+// The editable slice of a plan that a scenario clones.
+export type ScenarioPlan = Pick<PlanState, 'settings' | 'income' | 'income_oneoff' | 'bills' | 'targets' | 'events'>;
 
 export interface PlanState {
   settings: Settings;
@@ -106,7 +101,6 @@ export interface PlanState {
   targets: Target[];
   events: PlanEvent[];
   scenarios: Scenario[];
-  scenario_overrides: ScenarioOverride[];
 }
 
 // ----------------------------------------------------------------------------
@@ -272,7 +266,6 @@ export const emptyPlan = (): PlanState => ({
   targets: [],
   events: [],
   scenarios: [],
-  scenario_overrides: [],
 });
 
 export const todayYM = (): YM => currentYM();

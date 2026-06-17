@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { useStore, nextTempId } from '../state/store';
+import { nextTempId } from '../state/store';
+import { usePlanScope } from '../state/scope';
 import { monthlyBillAmount } from '../engine';
 import { FREQUENCIES, gbp, type Bill, type Frequency } from '../types';
-import { Button, MoneyInput, Select, TextInput, Toggle } from './ui';
+import { Button, MoneyInput, NumberInput, Select, TextInput, Toggle } from './ui';
 
 const UNCATEGORISED = 'Other';
 
@@ -17,11 +18,13 @@ function blankBill(isSavings: boolean): Bill {
     is_savings: isSavings,
     balance: 0,
     track_actuals: false,
+    rate_override: null,
   };
 }
 
 function BillEditor({ bill, onClose }: { bill: Bill; onClose: () => void }) {
-  const { update } = useStore();
+  const { update } = usePlanScope();
+  const [adv, setAdv] = useState(false);
   const patch = (p: Partial<Bill>) =>
     update((d) => ({ ...d, bills: d.bills.map((b) => (b.id === bill.id ? { ...b, ...p } : b)) }));
   const remove = () => {
@@ -59,6 +62,20 @@ function BillEditor({ bill, onClose }: { bill: Bill; onClose: () => void }) {
           </label>
         )}
       </div>
+
+      {bill.is_savings && (
+        <div>
+          <button onClick={() => setAdv((a) => !a)} className="text-xs font-medium text-accent">
+            {adv ? 'Hide' : 'Advanced'} · interest rate
+          </button>
+          {adv && (
+            <label className="mt-2 block">
+              <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Interest rate for this pot (overrides default)</span>
+              <NumberInput value={bill.rate_override} onChange={(n) => patch({ rate_override: n })} suffix="%" placeholder="default" />
+            </label>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1">
         <Toggle checked={bill.is_savings} onChange={(b) => patch({ is_savings: b, category: b && !bill.category ? 'Savings' : bill.category })} label="Savings (sets money aside)" />
@@ -122,7 +139,7 @@ function Group({
 }
 
 export function OutgoingsSection() {
-  const { plan, update } = useStore();
+  const { plan, update } = usePlanScope();
   const [openId, setOpenId] = useState<number | null>(null);
 
   const groups = useMemo(() => {

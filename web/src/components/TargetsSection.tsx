@@ -1,18 +1,13 @@
 import { useState } from 'react';
-import { useStore, nextTempId } from '../state/store';
+import { nextTempId } from '../state/store';
+import { usePlanScope } from '../state/scope';
 import { addMonths, currentYM, formatYM, makeYM, parseYM, MONTHS_LONG } from '../lib/calendar';
 import { gbp, type Target } from '../types';
 import type { TargetStatus } from '../types';
 import { Button, MoneyInput, Select, TextInput } from './ui';
 
-export interface TargetView {
-  base: TargetStatus;
-  current: TargetStatus;
-  monthsDelta: number | null;
-}
-
 function TargetEditor({ target, onClose }: { target: Target; onClose: () => void }) {
-  const { plan, update } = useStore();
+  const { plan, update } = usePlanScope();
   const savingsLines = plan.bills.filter((b) => b.is_savings);
   const { y, m } = parseYM(target.target_ym || addMonths(currentYM(), 12));
   const patch = (p: Partial<Target>) =>
@@ -76,11 +71,9 @@ function TargetEditor({ target, onClose }: { target: Target; onClose: () => void
   );
 }
 
-function StatusLine({ view }: { view: TargetView }) {
-  const s = view.current;
+function StatusLine({ s }: { s: TargetStatus }) {
   const pct = s.target.target_amount > 0 ? Math.min(100, (s.currentBalance / s.target.target_amount) * 100) : 0;
   const onTrack = s.onTrack;
-  const delta = view.monthsDelta;
 
   return (
     <div className="px-4 pb-3">
@@ -94,11 +87,6 @@ function StatusLine({ view }: { view: TargetView }) {
               ? `Behind — +${gbp(s.shortfallPerMonth)}/mo needed`
               : 'Behind'}
         </span>
-        {delta != null && delta !== 0 && (
-          <span className={`rounded-full px-2 py-0.5 font-semibold ${delta < 0 ? 'bg-green-100 text-good' : 'bg-amber-100 text-warn'}`}>
-            {delta < 0 ? `↓ ${Math.abs(delta)} mo sooner` : `↑ ${delta} mo later`}
-          </span>
-        )}
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
         <div className={`h-full rounded-full ${onTrack ? 'bg-good' : 'bg-warn'}`} style={{ width: `${pct}%` }} />
@@ -111,8 +99,8 @@ function StatusLine({ view }: { view: TargetView }) {
   );
 }
 
-export function TargetsSection({ views }: { views: TargetView[] }) {
-  const { plan, update } = useStore();
+export function TargetsSection({ statuses }: { statuses: TargetStatus[] }) {
+  const { plan, update } = usePlanScope();
   const [openId, setOpenId] = useState<number | null>(null);
 
   const add = () => {
@@ -127,7 +115,7 @@ export function TargetsSection({ views }: { views: TargetView[] }) {
     setOpenId(t.id);
   };
 
-  const byId = new Map(views.map((v) => [v.current.target.id, v]));
+  const byId = new Map(statuses.map((s) => [s.target.id, s]));
 
   return (
     <section className="space-y-2">
@@ -143,14 +131,14 @@ export function TargetsSection({ views }: { views: TargetView[] }) {
       ) : (
         <div className="space-y-2">
           {plan.targets.map((t) => {
-            const view = byId.get(t.id);
+            const s = byId.get(t.id);
             return (
               <div key={t.id} className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
                 <button onClick={() => setOpenId(openId === t.id ? null : t.id)} className="flex w-full items-center justify-between gap-2 px-4 pt-3 pb-1.5 text-left">
                   <span className="truncate font-semibold">{t.name || <span className="text-slate-400">Untitled goal</span>}</span>
                   <span className="text-sm tabular-nums text-slate-500">{gbp(t.target_amount)}</span>
                 </button>
-                {view && <StatusLine view={view} />}
+                {s && <StatusLine s={s} />}
                 {openId === t.id && <TargetEditor target={t} onClose={() => setOpenId(null)} />}
               </div>
             );

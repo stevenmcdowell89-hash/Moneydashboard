@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { useStore, nextTempId } from '../state/store';
+import { nextTempId } from '../state/store';
+import { usePlanScope } from '../state/scope';
 import { netBonus, netFromGross } from '../engine';
 import { addMonths, currentYM, formatYMShort, makeYM, parseYM, MONTHS_LONG } from '../lib/calendar';
 import { gbp, gbp2, type IncomeOneoff, type PayBreakdown, type PensionType } from '../types';
@@ -31,7 +32,7 @@ function Breakdown({ b }: { b: PayBreakdown }) {
 }
 
 export function PayBreakdownModal({ incomeId, onClose }: { incomeId: number; onClose: () => void }) {
-  const { plan, taxConfig, update } = useStore();
+  const { plan, taxConfig, update } = usePlanScope();
   const income = plan.income.find((i) => i.id === incomeId);
   const lbl = 'mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400';
 

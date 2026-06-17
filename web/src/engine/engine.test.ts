@@ -161,6 +161,7 @@ const bill = (over: Partial<Bill>): Bill => ({
   is_savings: false,
   balance: 0,
   track_actuals: false,
+  rate_override: null,
   ...over,
 });
 
@@ -219,6 +220,35 @@ describe('project', () => {
     );
     // 1000 * (1 + 0.12/12) + 0 = 1010
     expect(r.points[0].savingsTotal).toBeCloseTo(1010, 6);
+  });
+
+  it('compounds a savings line at its rate_override instead of the global rate', () => {
+    const r = project(
+      resolved({
+        savingsRate: 0, // global is 0%
+        bills: [bill({ id: 2, name: 'ISA', amount: 0, is_savings: true, balance: 1000, rate_override: 12 })],
+      }),
+      1,
+      TAX,
+    );
+    // Uses the per-line 12% override, not the 0% global: 1000 * (1 + 0.12/12) = 1010
+    expect(r.points[0].savingsTotal).toBeCloseTo(1010, 6);
+  });
+
+  it('mixes a per-line override with a globally-rated savings line', () => {
+    const r = project(
+      resolved({
+        savingsRate: 0,
+        bills: [
+          bill({ id: 2, name: 'ISA', amount: 0, is_savings: true, balance: 1000, rate_override: 12 }),
+          bill({ id: 3, name: 'Pot', amount: 0, is_savings: true, balance: 1000, rate_override: null }),
+        ],
+      }),
+      1,
+      TAX,
+    );
+    // ISA grows at 12% → 1010 ; Pot stays at global 0% → 1000 ; total 2010.
+    expect(r.points[0].savingsTotal).toBeCloseTo(2010, 6);
   });
 
   it('an inactive savings line contributes nothing', () => {
@@ -332,14 +362,38 @@ describe('targetStatus', () => {
     expect(s.currentContribution).toBe(0);
     expect(s.onTrack).toBe(false);
   });
+
+  it("uses the linked savings line's rate_override for requiredPerMonth", () => {
+    // Same target/balance/term, but the linked line carries a 12% override while
+    // the global rate is 0%. Interest lowers the required monthly contribution.
+    const globalPlan = resolved({
+      savingsRate: 0,
+      bills: [bill({ id: 5, name: 'Pot', amount: 0, is_savings: true, balance: 0, rate_override: null })],
+    });
+    const overridePlan = resolved({
+      savingsRate: 0,
+      bills: [bill({ id: 5, name: 'Pot', amount: 0, is_savings: true, balance: 0, rate_override: 12 })],
+    });
+    const t = target({ target_amount: 1200, target_ym: '2026-12', linked_bill_id: 5 });
+
+    const sGlobal = targetStatus(t, globalPlan);
+    const sOverride = targetStatus(t, overridePlan);
+
+    // 0% global → straight 1200/11 ; 12% override → annuity formula (lower).
+    expect(sGlobal.requiredPerMonth).toBeCloseTo(1200 / 11, 4);
+    expect(sOverride.requiredPerMonth).toBeCloseTo(requiredContribution(1200, 0, 11, 12), 6);
+    expect(sOverride.requiredPerMonth).toBeLessThan(sGlobal.requiredPerMonth);
+  });
 });
 
 describe('resolveScenario', () => {
-  function basePlan(): PlanState {
+  // resolveScenario takes a plan-like slice (settings/income/income_oneoff/bills/
+  // events), not a full PlanState — a scenario passes its own decoded copy.
+  function planSlice(): Pick<PlanState, 'settings' | 'income' | 'income_oneoff' | 'bills' | 'events'> {
     return {
       settings: {
         id: 1,
-        opening_cash: 0,
+        opening_cash: 1500,
         projection_months_default: 24,
         currency: 'GBP',
         tax_year: '2026/27',
@@ -352,41 +406,52 @@ describe('resolveScenario', () => {
         bill({ id: 2, name: 'Gym', amount: 40 }),
         bill({ id: 3, name: 'ISA', amount: 100, is_savings: true }),
       ],
-      targets: [],
       events: [
         { id: 1, name: 'All event', total_cost: 100, start_ym: '2026-02', duration_months: 1, applies_to: 'all' },
-        { id: 2, name: 'Sc7 event', total_cost: 200, start_ym: '2026-03', duration_months: 1, applies_to: '7' },
-      ],
-      scenarios: [{ id: 7, name: 'Cut gym', type: 'adjustment', target_id: null, created_at: '' }],
-      scenario_overrides: [
-        { id: 1, scenario_id: 7, item_type: 'bill', item_id: 2, override_amount: 0 }, // cancel gym
-        { id: 2, scenario_id: 7, item_type: 'income', item_id: 1, override_amount: 2500 }, // bump income
-        { id: 3, scenario_id: 7, item_type: 'bill', item_id: 3, override_amount: 250 }, // bump savings line
+        { id: 2, name: 'Sc event', total_cost: 200, start_ym: '2026-03', duration_months: 1, applies_to: '7' },
       ],
     };
   }
 
-  it('applies overrides (0 cancels, value replaces, absent unchanged)', () => {
-    const rp = resolveScenario(basePlan(), 7, NOW);
-    expect(rp.income[0].net_amount).toBe(2500);
-    expect(rp.bills.find((b) => b.id === 2)!.active).toBe(false);
-    expect(rp.bills.find((b) => b.id === 1)!.amount).toBe(500);
-    // savings line is a bill → covered by item_type 'bill'
-    expect(rp.bills.find((b) => b.id === 3)!.amount).toBe(250);
-    expect(rp.savingsRate).toBe(3);
-    expect(rp.nowYM).toBe(NOW);
-  });
-
-  it('filters events to the scenario (all + this id)', () => {
-    const rp = resolveScenario(basePlan(), 7, NOW);
-    expect(rp.events.map((e) => e.id).sort()).toEqual([1, 2]);
-  });
-
-  it('base plan (null scenario) applies no overrides and drops scenario-specific events', () => {
-    const rp = resolveScenario(basePlan(), null, NOW);
+  it('maps a plan slice straight into a ResolvedPlan', () => {
+    const slice = planSlice();
+    const rp = resolveScenario(slice, '2026-01');
+    // Income / bills / income_oneoff pass through untouched.
+    expect(rp.income).toEqual(slice.income);
     expect(rp.income[0].net_amount).toBe(2000);
+    expect(rp.bills.map((b) => b.id)).toEqual([1, 2, 3]);
     expect(rp.bills.find((b) => b.id === 2)!.active).toBe(true);
-    expect(rp.events.map((e) => e.id)).toEqual([1]);
+    expect(rp.income_oneoff).toEqual([]);
+    // All events are kept — no per-scenario applies_to filtering anymore.
+    expect(rp.events.map((e) => e.id)).toEqual([1, 2]);
+    // Anchor + settings-derived fields.
+    expect(rp.opening_cash).toBe(1500);
+    expect(rp.savingsRate).toBe(3);
+    expect(rp.nowYM).toBe('2026-01');
+    expect(rp.scenarioId).toBeNull();
+  });
+
+  it('accepts a minimal plan-like object literal', () => {
+    const rp = resolveScenario(
+      {
+        settings: {
+          id: 1,
+          opening_cash: 42,
+          projection_months_default: 12,
+          currency: 'GBP',
+          tax_year: '2026/27',
+          default_savings_rate: 5,
+        },
+        income: [income({})],
+        income_oneoff: [],
+        bills: [bill({})],
+        events: [],
+      },
+      '2026-01',
+    );
+    expect(rp.opening_cash).toBe(42);
+    expect(rp.savingsRate).toBe(5);
+    expect(rp.events).toEqual([]);
     expect(rp.scenarioId).toBeNull();
   });
 });
