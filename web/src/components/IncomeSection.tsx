@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { nextTempId } from '../state/store';
 import { usePlanScope } from '../state/scope';
 import { monthlyNetIncome } from '../engine';
-import { FREQUENCIES, gbp, type Frequency, type Income } from '../types';
+import { FREQUENCIES, gbp, type Frequency, type Income, type PensionType } from '../types';
 import { Button, MoneyInput, NumberInput, Select, TextInput, Toggle } from './ui';
 
 function blankIncome(): Income {
@@ -70,6 +70,18 @@ function IncomeEditor({ income, onClose, onOpenPay }: { income: Income; onClose:
               <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Pension</span>
               <NumberInput value={income.pension_rate} onChange={(n) => patch({ pension_rate: n })} suffix="%" />
             </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Pension type</span>
+              <Select value={income.pension_type ?? 'relief_at_source'} onChange={(e) => patch({ pension_type: e.target.value as PensionType })}>
+                <option value="salary_sacrifice">Salary sacrifice</option>
+                <option value="net_pay">Net pay</option>
+                <option value="relief_at_source">Relief at source</option>
+              </Select>
+            </label>
+            <label className="col-span-2 block">
+              <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Salary sacrifice £/mo (EV, cycle, extra pension…)</span>
+              <MoneyInput value={income.sacrifice_monthly} onChange={(n) => patch({ sacrifice_monthly: n })} />
+            </label>
             <label className="col-span-2 block">
               <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Tax code (optional)</span>
               <TextInput
@@ -78,6 +90,9 @@ function IncomeEditor({ income, onClose, onOpenPay }: { income: Income; onClose:
                 placeholder="1257L"
               />
             </label>
+            <p className="col-span-2 text-[11px] text-slate-400">
+              Salary-sacrifice items come off before tax &amp; NI. Set the pension type to “Salary sacrifice” if your pension is sacrificed too.
+            </p>
             <button onClick={() => onOpenPay(income.id)} className="col-span-2 text-left text-sm font-medium text-accent">
               Open full pay breakdown →
             </button>

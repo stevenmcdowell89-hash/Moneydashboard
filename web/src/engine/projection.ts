@@ -17,7 +17,14 @@ const eventMonthly = (totalCost: number, duration: number) => (duration > 0 ? to
  *   events(m)  = sum of event costs active in month m (spread over duration)
  *   income(m)  = monthly net income + any net bonus landing this month
  *   netFlow(m) = income - spend - saved - events
- *   cash(m)    = (m==1 ? opening_cash : cash(m-1)) + netFlow
+ *
+ * Cash does NOT bank the recurring monthly surplus — leftover after bills and
+ * assigned savings is "left to spend" each month, so a steady surplus keeps cash
+ * flat (only money assigned to a savings line accumulates). Cash still moves with
+ * lumps and shortfalls: one-off events dip it, bonuses lift it, and a recurring
+ * DEFICIT draws it down.
+ *   bank        = max(0, recurringSurplus)  where recurringSurplus = income(recurring) - spend - saved
+ *   cash(m)     = (m==1 ? opening_cash : cash(m-1)) + netFlow(m) - bank
  *   savings line balance(m) = prev*(1 + (rate_override ?? savingsRate)/100/12) + monthlyAmount
  *   savingsTotal(m)         = sum of savings-line balances at month m
  */
@@ -36,6 +43,9 @@ export function project(plan: ResolvedPlan, horizon: number, taxConfig: TaxConfi
 
   const spend = spendBills.reduce((s, b) => s + monthlyAmount(b), 0);
   const saved = savingsBills.reduce((s, b) => s + monthlyAmount(b), 0);
+
+  // Recurring surplus is "left to spend" and not banked; only deficits/lumps move cash.
+  const bank = Math.max(0, monthlyIncome - spend - saved);
 
   // Pre-compute net bonus by offset.
   const bonusByOffset = new Map<number, number>();
@@ -64,7 +74,7 @@ export function project(plan: ResolvedPlan, horizon: number, taxConfig: TaxConfi
     const bonus = bonusByOffset.get(offset) ?? 0;
     const income = monthlyIncome + bonus;
     const netFlow = income - spend - saved - events;
-    cash = (offset === 1 ? plan.opening_cash : cash) + netFlow;
+    cash = (offset === 1 ? plan.opening_cash : cash) + netFlow - bank;
 
     // Advance each savings-line balance one month, then sum.
     let savingsTotal = 0;

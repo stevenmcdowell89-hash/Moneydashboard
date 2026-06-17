@@ -11,8 +11,16 @@ import type {
 
 // Numeric inputs keep their own text state so a value of 0 shows as an empty
 // field with a placeholder (no hard "0" to delete), and partial entries like
-// "0." / "1." while typing aren't clobbered. External changes (e.g. a slider)
-// still sync in.
+// "0." / "1." while typing aren't clobbered. They use a filtered TEXT input
+// (inputMode decimal) rather than type=number — on mobile, type=number keyboards
+// can commit stray characters when dismissed; we strip anything non-numeric.
+function sanitizeNumeric(raw: string): string {
+  let t = raw.replace(/[^0-9.]/g, '');
+  const dot = t.indexOf('.');
+  if (dot !== -1) t = t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, '');
+  return t;
+}
+
 function useNumericText(value: number | null | undefined, onChange: (n: number) => void) {
   const v = value ?? 0;
   const [text, setText] = useState(v === 0 ? '' : String(v));
@@ -21,9 +29,10 @@ function useNumericText(value: number | null | undefined, onChange: (n: number) 
     if (parsed !== v) setText(v === 0 ? '' : String(v));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v]);
-  const handle = (t: string) => {
+  const handle = (raw: string) => {
+    const t = sanitizeNumeric(raw);
     setText(t);
-    onChange(t === '' ? 0 : Number(t));
+    onChange(t === '' || t === '.' ? 0 : Number(t));
   };
   return { text, handle };
 }
@@ -116,7 +125,7 @@ export function MoneyInput({
     <div className={`relative ${className}`}>
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">£</span>
       <input
-        type="number"
+        type="text"
         inputMode="decimal"
         step={step}
         placeholder={placeholder}
@@ -148,7 +157,7 @@ export function NumberInput({
   return (
     <div className={`relative ${className}`}>
       <input
-        type="number"
+        type="text"
         inputMode="decimal"
         step={step}
         placeholder={placeholder}

@@ -175,23 +175,21 @@ const target = (over: Partial<Target>): Target => ({
 });
 
 describe('project', () => {
-  it('rolls cash month by month with income and a spend bill', () => {
+  it('keeps cash flat when there is a recurring surplus (leftover is spent, not banked)', () => {
     const r = project(
       resolved({ opening_cash: 1000, income: [income({})], bills: [bill({})] }),
       3,
       TAX,
     );
-    // netFlow each month = 2000 - 500 = 1500
-    expect(r.points.map((p) => p.cash)).toEqual([2500, 4000, 5500]);
+    // recurring surplus = 2000 - 500 = 1500 is "left to spend" → cash stays flat.
+    expect(r.points.map((p) => p.cash)).toEqual([1000, 1000, 1000]);
     expect(r.points.map((p) => p.spend)).toEqual([500, 500, 500]);
-    expect(r.points.map((p) => p.saved)).toEqual([0, 0, 0]);
-    expect(r.points[0].ym).toBe('2026-01');
-    expect(r.points[2].ym).toBe('2026-03');
-    expect(r.lowestCash).toEqual({ offset: 1, ym: '2026-01', value: 2500 });
+    expect(r.points.map((p) => p.netFlow)).toEqual([1500, 1500, 1500]); // still "left to spend"
+    expect(r.lowestCash).toEqual({ offset: 1, ym: '2026-01', value: 1000 });
     expect(r.nowYM).toBe(NOW);
   });
 
-  it('a savings-line bill deducts from cash AND accrues a balance', () => {
+  it('a savings-line accrues a balance while cash stays flat', () => {
     const r = project(
       resolved({
         opening_cash: 1000,
@@ -201,12 +199,33 @@ describe('project', () => {
       3,
       TAX,
     );
-    // saved is reported separately and removed from cash: netFlow = 2000 - 100 = 1900
     expect(r.points.map((p) => p.saved)).toEqual([100, 100, 100]);
-    expect(r.points.map((p) => p.spend)).toEqual([0, 0, 0]);
-    expect(r.points.map((p) => p.cash)).toEqual([2900, 4800, 6700]);
-    // balance grows (0% rate): 100, 200, 300
+    // Only the assigned savings accumulates; cash (the discretionary surplus) is spent.
+    expect(r.points.map((p) => p.cash)).toEqual([1000, 1000, 1000]);
     expect(r.points.map((p) => p.savingsTotal)).toEqual([100, 200, 300]);
+  });
+
+  it('draws cash down on a recurring deficit, and dips on a one-off event', () => {
+    const deficit = project(
+      resolved({ opening_cash: 1000, income: [income({ net_amount: 400 })], bills: [bill({ amount: 500 })] }),
+      3,
+      TAX,
+    );
+    // recurring deficit = 400 - 500 = -100/mo → cash falls 100 each month.
+    expect(deficit.points.map((p) => p.cash)).toEqual([900, 800, 700]);
+
+    const oneOff = project(
+      resolved({
+        opening_cash: 1000,
+        income: [income({})],
+        bills: [bill({})],
+        events: [{ id: 9, name: 'Boiler', total_cost: 600, start_ym: '2026-02', duration_months: 1, applies_to: 'all' }],
+      }),
+      3,
+      TAX,
+    );
+    // Surplus keeps cash flat; the £600 one-off dips month 2 only, then flat again.
+    expect(oneOff.points.map((p) => p.cash)).toEqual([1000, 400, 400]);
   });
 
   it('compounds interest on a savings-line balance', () => {
