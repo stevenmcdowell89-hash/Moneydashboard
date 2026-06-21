@@ -158,6 +158,10 @@ export function MoneyInput({
       <input
         type="text"
         inputMode="decimal"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
         step={step}
         placeholder={placeholder}
         value={text}
@@ -191,6 +195,10 @@ export function NumberInput({
       <input
         type="text"
         inputMode="decimal"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
         step={step}
         placeholder={placeholder}
         value={text}

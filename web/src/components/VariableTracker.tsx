@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { monthlyBillAmount } from '../engine';
 import { api } from '../api/client';
@@ -13,6 +13,8 @@ export function VariableTracker() {
   const period = currentYM();
   const tracked = useMemo(() => plan.bills.filter((b) => b.track_actuals && b.active), [plan.bills]);
   const [actuals, setActuals] = useState<Record<number, number | null>>({});
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
 
   useEffect(() => {
     if (tracked.length === 0) return;
@@ -31,14 +33,18 @@ export function VariableTracker() {
   const setActual = (billId: number, v: number) => {
     const next = { ...actuals, [billId]: v };
     setActuals(next);
-    const rows: Omit<Actual, 'id'>[] = tracked.map((b) => ({
-      period,
-      bill_id: b.id,
-      planned_amount: monthlyBillAmount(b),
-      actual_amount: next[b.id] ?? null,
-      note: null,
-    }));
-    api.putActuals(period, rows).catch(() => undefined);
+    // Debounce the network save so we don't PUT on every keystroke.
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const rows: Omit<Actual, 'id'>[] = tracked.map((b) => ({
+        period,
+        bill_id: b.id,
+        planned_amount: monthlyBillAmount(b),
+        actual_amount: next[b.id] ?? null,
+        note: null,
+      }));
+      api.putActuals(period, rows).catch(() => undefined);
+    }, 600);
   };
 
   return (
