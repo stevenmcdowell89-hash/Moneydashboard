@@ -9,17 +9,19 @@ import type {
   SelectHTMLAttributes,
 } from 'react';
 
-// Numeric inputs keep their own text state so a value of 0 shows as an empty
+// Numeric inputs keep their own text buffer so a value of 0 shows as an empty
 // field with a placeholder (no hard "0" to delete), and partial entries like
 // "0." / "1." while typing aren't clobbered. They use a filtered TEXT input
-// (inputMode decimal) rather than type=number — on mobile, type=number keyboards
-// can commit stray characters when dismissed; we strip anything non-numeric.
+// (inputMode decimal) rather than type=number, and strip anything non-numeric on
+// input. The field selects its contents on focus so editing an existing value
+// REPLACES it rather than appending to it (otherwise tapping a field that shows
+// "1" and typing "3" yields "13" — the leading digit looks like it was added).
 //
-// Some Android keyboards (notably MIUI/Xiaomi) inject a stray character from the
-// "hide keyboard" button at the very moment the keyboard closes. That character
-// arrives in the SAME gesture as the field losing focus, so on blur we drop a
-// one-char insertion that happened in the last instant — a digit you actually
-// typed is always followed by a separate, later action.
+// We deliberately do NOT mutate the value on blur. An earlier version tried to
+// "strip a stray keyboard character" on blur, but it had no reliable way to tell
+// a stray character from a digit the user typed, so closing the keyboard right
+// after typing silently corrupted the number (e.g. it reverted to the old value
+// or snapped to a coerced minimum). Buffering + input filtering is enough.
 function sanitizeNumeric(raw: string): string {
   let t = raw.replace(/[^0-9.]/g, '');
   const dot = t.indexOf('.');
@@ -32,40 +34,29 @@ function useNumericText(value: number | null | undefined, onChange: (n: number) 
   const [text, setText] = useState(v === 0 ? '' : String(v));
   const textRef = useRef(text);
   textRef.current = text;
-  const lastInputTs = useRef(0);
-  const grewByOne = useRef(false);
 
+  // Re-sync the buffer only when the value changes from OUTSIDE this field
+  // (loaded from the server, reset, etc.) — not when it merely echoes back the
+  // number we just typed.
   useEffect(() => {
     const parsed = textRef.current === '' ? 0 : Number(textRef.current);
     if (parsed !== v) setText(v === 0 ? '' : String(v));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v]);
 
-  const commit = (t: string) => {
+  const handle = (raw: string) => {
+    const t = sanitizeNumeric(raw);
     setText(t);
     onChange(t === '' || t === '.' ? 0 : Number(t));
   };
 
-  const handle = (raw: string) => {
-    const t = sanitizeNumeric(raw);
-    grewByOne.current = t.length === textRef.current.length + 1;
-    lastInputTs.current = Date.now();
-    commit(t);
-  };
+  // Select-all on focus so the first keystroke replaces the existing value.
+  const onFocus = (e: { currentTarget: HTMLInputElement }) => e.currentTarget.select();
+  // On blur, only normalise the DISPLAY to the committed number ("007" -> "7",
+  // "5." -> "5"). Never changes the value, so it can't corrupt what you typed.
+  const onBlur = () => setText(v === 0 ? '' : String(v));
 
-  const onBlur = () => {
-    // Strip a char that was inserted in the same instant the field blurred AND
-    // focus didn't move to another field (i.e. the keyboard was dismissed).
-    if (!grewByOne.current || Date.now() - lastInputTs.current > 300) return;
-    grewByOne.current = false;
-    setTimeout(() => {
-      const ae = document.activeElement;
-      if (ae && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName)) return;
-      commit(textRef.current.slice(0, -1));
-    }, 0);
-  };
-
-  return { text, handle, onBlur };
+  return { text, handle, onFocus, onBlur };
 }
 
 export function Card({
@@ -151,7 +142,7 @@ export function MoneyInput({
   placeholder?: string;
   step?: string;
 }) {
-  const { text, handle, onBlur } = useNumericText(value, onChange);
+  const { text, handle, onFocus, onBlur } = useNumericText(value, onChange);
   return (
     <div className={`relative ${className}`}>
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">£</span>
@@ -166,6 +157,7 @@ export function MoneyInput({
         placeholder={placeholder}
         value={text}
         onChange={(e) => handle(e.target.value)}
+        onFocus={onFocus}
         onBlur={onBlur}
         className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-7 pr-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-blue-100"
       />
@@ -189,7 +181,7 @@ export function NumberInput({
   step?: string;
   suffix?: string;
 }) {
-  const { text, handle, onBlur } = useNumericText(value, onChange);
+  const { text, handle, onFocus, onBlur } = useNumericText(value, onChange);
   return (
     <div className={`relative ${className}`}>
       <input
@@ -203,6 +195,7 @@ export function NumberInput({
         placeholder={placeholder}
         value={text}
         onChange={(e) => handle(e.target.value)}
+        onFocus={onFocus}
         onBlur={onBlur}
         className={`w-full rounded-xl border border-slate-300 bg-white py-2 pl-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-blue-100 ${
           suffix ? 'pr-8' : 'pr-3'
