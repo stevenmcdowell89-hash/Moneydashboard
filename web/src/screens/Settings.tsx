@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../state/store';
 import { api } from '../api/client';
 import { gbp, type TaxConfig } from '../types';
-import { Card, Section, Button, TextInput, Select, Stat } from '../components/ui';
+import { Card, Section, Button, TextInput, NumberInput, Select, Stat } from '../components/ui';
 
 export function Settings() {
   const { plan, update, taxConfig, setTaxConfig } = useStore();
@@ -78,10 +78,10 @@ export function Settings() {
             </div>
             <label className="block">
               <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Personal allowance</span>
-              <TextInput
-                type="number"
+              <NumberInput
                 value={tc.personal_allowance}
-                onChange={(e) => setTc({ ...tc, personal_allowance: Number(e.target.value) })}
+                onChange={(n) => setTc({ ...tc, personal_allowance: n ?? 0 })}
+                min={0}
               />
             </label>
 
@@ -89,24 +89,23 @@ export function Settings() {
               <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Income-tax bands</div>
               {tc.bands.map((b, i) => (
                 <div key={i} className="mb-2 grid grid-cols-2 gap-2">
-                  <TextInput
-                    type="number"
+                  <NumberInput
                     value={b.threshold}
-                    onChange={(e) => {
+                    onChange={(n) => {
                       const bands = [...tc.bands];
-                      bands[i] = { ...b, threshold: Number(e.target.value) };
+                      bands[i] = { ...b, threshold: n ?? 0 };
                       setTc({ ...tc, bands });
                     }}
+                    min={0}
                   />
-                  <TextInput
-                    type="number"
-                    step="0.01"
+                  <NumberInput
                     value={b.rate}
-                    onChange={(e) => {
+                    onChange={(n) => {
                       const bands = [...tc.bands];
-                      bands[i] = { ...b, rate: Number(e.target.value) };
+                      bands[i] = { ...b, rate: n ?? 0 };
                       setTc({ ...tc, bands });
                     }}
+                    min={0}
                   />
                 </div>
               ))}
@@ -116,36 +115,34 @@ export function Settings() {
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">NI primary threshold</span>
-                <TextInput
-                  type="number"
+                <NumberInput
                   value={tc.ni_thresholds.primary}
-                  onChange={(e) => setTc({ ...tc, ni_thresholds: { ...tc.ni_thresholds, primary: Number(e.target.value) } })}
+                  onChange={(n) => setTc({ ...tc, ni_thresholds: { ...tc.ni_thresholds, primary: n ?? 0 } })}
+                  min={0}
                 />
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">NI upper limit</span>
-                <TextInput
-                  type="number"
+                <NumberInput
                   value={tc.ni_thresholds.upper}
-                  onChange={(e) => setTc({ ...tc, ni_thresholds: { ...tc.ni_thresholds, upper: Number(e.target.value) } })}
+                  onChange={(n) => setTc({ ...tc, ni_thresholds: { ...tc.ni_thresholds, upper: n ?? 0 } })}
+                  min={0}
                 />
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">NI main rate</span>
-                <TextInput
-                  type="number"
-                  step="0.01"
+                <NumberInput
                   value={tc.ni_rates.main}
-                  onChange={(e) => setTc({ ...tc, ni_rates: { ...tc.ni_rates, main: Number(e.target.value) } })}
+                  onChange={(n) => setTc({ ...tc, ni_rates: { ...tc.ni_rates, main: n ?? 0 } })}
+                  min={0}
                 />
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">NI upper rate</span>
-                <TextInput
-                  type="number"
-                  step="0.01"
+                <NumberInput
                   value={tc.ni_rates.upper}
-                  onChange={(e) => setTc({ ...tc, ni_rates: { ...tc.ni_rates, upper: Number(e.target.value) } })}
+                  onChange={(n) => setTc({ ...tc, ni_rates: { ...tc.ni_rates, upper: n ?? 0 } })}
+                  min={0}
                 />
               </label>
             </div>

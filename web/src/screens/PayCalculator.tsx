@@ -17,6 +17,7 @@ import {
   Card,
   EmptyState,
   MoneyInput,
+  NumberInput,
   Section,
   Select,
   Stat,
@@ -150,13 +151,7 @@ function QuickCalc({ taxConfig }: { taxConfig: TaxConfig }) {
           <MoneyInput value={gross} onChange={setGross} step="100" />
         </LabeledField>
         <LabeledField label="Pension rate (%)">
-          <TextInput
-            type="number"
-            inputMode="decimal"
-            step="0.5"
-            value={rate}
-            onChange={(e) => setRate(e.target.value === '' ? 0 : Number(e.target.value))}
-          />
+          <NumberInput value={rate} onChange={(n) => setRate(n ?? 0)} min={0} />
         </LabeledField>
         <LabeledField label="Pension type">
           <Select value={type} onChange={(e) => setType(e.target.value as PensionType)}>
@@ -215,12 +210,10 @@ function IncomeCard({
           <MoneyInput value={income.gross_annual} onChange={(n) => onChange({ gross_annual: n })} step="100" />
         </LabeledField>
         <LabeledField label="Pension rate (%)">
-          <TextInput
-            type="number"
-            inputMode="decimal"
-            step="0.5"
+          <NumberInput
             value={income.pension_rate ?? 0}
-            onChange={(e) => onChange({ pension_rate: e.target.value === '' ? 0 : Number(e.target.value) })}
+            onChange={(n) => onChange({ pension_rate: n ?? 0 })}
+            min={0}
           />
         </LabeledField>
         <LabeledField label="Pension type">
@@ -271,27 +264,21 @@ function BonusRow({
           <TextInput value={bonus.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Bonus" />
         </LabeledField>
         <LabeledField label="Month (1–N)">
-          <TextInput
-            type="number"
-            inputMode="numeric"
-            min={1}
-            step="1"
+          <NumberInput
             value={bonus.month}
-            onChange={(e) => onChange({ month: e.target.value === '' ? 1 : Math.max(1, Number(e.target.value)) })}
+            onChange={(n) => onChange({ month: Math.max(1, n ?? 1) })}
+            integer
+            min={1}
           />
         </LabeledField>
         <LabeledField label="Gross amount">
           <MoneyInput value={bonus.gross_amount} onChange={(n) => onChange({ gross_amount: n })} step="100" />
         </LabeledField>
         <LabeledField label="Pension sacrifice (%)">
-          <TextInput
-            type="number"
-            inputMode="decimal"
-            step="1"
+          <NumberInput
             value={bonus.pension_sacrifice_pct ?? 0}
-            onChange={(e) =>
-              onChange({ pension_sacrifice_pct: e.target.value === '' ? 0 : Number(e.target.value) })
-            }
+            onChange={(n) => onChange({ pension_sacrifice_pct: n ?? 0 })}
+            min={0}
           />
         </LabeledField>
       </div>

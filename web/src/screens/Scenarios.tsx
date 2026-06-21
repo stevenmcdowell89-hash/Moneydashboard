@@ -21,6 +21,7 @@ import {
   EmptyState,
   Modal,
   MoneyInput,
+  NumberInput,
   Section,
   Select,
   Slider,
@@ -236,18 +237,20 @@ function ScenarioEvents({ scenarioId }: { scenarioId: number }) {
               </label>
               <label className="text-xs text-slate-500">
                 Start month
-                <TextInput
-                  type="number"
+                <NumberInput
                   value={e.start_month}
-                  onChange={(ev) => patchEvent(e.id, { start_month: Math.max(1, Number(ev.target.value) || 1) })}
+                  onChange={(n) => patchEvent(e.id, { start_month: Math.max(1, n ?? 1) })}
+                  integer
+                  min={1}
                 />
               </label>
               <label className="text-xs text-slate-500">
                 Duration (mo)
-                <TextInput
-                  type="number"
+                <NumberInput
                   value={e.duration_months}
-                  onChange={(ev) => patchEvent(e.id, { duration_months: Math.max(1, Number(ev.target.value) || 1) })}
+                  onChange={(n) => patchEvent(e.id, { duration_months: Math.max(1, n ?? 1) })}
+                  integer
+                  min={1}
                 />
               </label>
             </div>
@@ -394,13 +397,12 @@ function TargetEditor({ scenario, horizon }: { scenario: Scenario; horizon: numb
             </label>
             <label className="text-xs text-slate-500">
               Target month (from now)
-              <TextInput
-                type="number"
-                value={target.target_month ?? ''}
+              <NumberInput
+                value={target.target_month}
                 placeholder={String(horizon)}
-                onChange={(e) =>
-                  patchTarget({ target_month: e.target.value === '' ? null : Math.max(1, Number(e.target.value) || 1) })
-                }
+                onChange={(n) => patchTarget({ target_month: n == null ? null : Math.max(1, n) })}
+                integer
+                min={1}
               />
             </label>
           </div>

@@ -1,6 +1,6 @@
 // THIS MONTH — the simple front door. Headline money for the current month,
 // each savings target's progress, and quick per-bill actuals entry.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useThisMonth } from '../hooks/useProjection';
 import { requiredContribution, monthGoalHit, normalizeFrequency } from '../engine';
@@ -60,6 +60,7 @@ export function ThisMonth() {
   const activeBills = useMemo(() => plan.bills.filter((b) => b.active), [plan.bills]);
   const [actuals, setActuals] = useState<Record<number, number | null>>({});
   const [loaded, setLoaded] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,10 +90,16 @@ export function ThisMonth() {
     api.putActuals(period, rows).catch(() => undefined);
   };
 
+  // Debounce the network save so we don't PUT on every keystroke.
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+  }, []);
+
   const setActual = (billId: number, v: number) => {
     const next = { ...actuals, [billId]: v };
     setActuals(next);
-    saveActuals(next);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => saveActuals(next), 600);
   };
 
   return (

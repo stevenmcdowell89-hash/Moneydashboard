@@ -13,7 +13,7 @@ import {
   type PensionType,
   type EntryMode,
 } from '../types';
-import { Card, Section, Button, TextInput, MoneyInput, Select, Toggle, Modal, EmptyState } from '../components/ui';
+import { Card, Section, Button, TextInput, MoneyInput, NumberInput, Select, Toggle, Modal, EmptyState } from '../components/ui';
 
 function Row({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
   return (
@@ -318,11 +318,7 @@ function IncomeEditor({ value, onSave, onClose }: { value: Income; onSave: (i: I
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Pension %">
-                <TextInput
-                  type="number"
-                  value={v.pension_rate ?? 0}
-                  onChange={(e) => set({ pension_rate: Number(e.target.value) })}
-                />
+                <NumberInput value={v.pension_rate ?? 0} onChange={(n) => set({ pension_rate: n ?? 0 })} min={0} />
               </Field>
               <Field label="Pension type">
                 <Select value={v.pension_type ?? 'relief_at_source'} onChange={(e) => set({ pension_type: e.target.value as PensionType })}>
@@ -405,7 +401,7 @@ function TargetEditor({ value, onSave, onClose }: { value: SavingsTarget; onSave
           </Field>
         </div>
         <Field label="Annual interest rate (%)">
-          <TextInput type="number" value={v.annual_rate} onChange={(e) => set({ annual_rate: Number(e.target.value) })} />
+          <NumberInput value={v.annual_rate} onChange={(n) => set({ annual_rate: n ?? 0 })} min={0} />
         </Field>
         <Toggle
           checked={isGoal}
@@ -422,10 +418,11 @@ function TargetEditor({ value, onSave, onClose }: { value: SavingsTarget; onSave
               <MoneyInput value={v.target_amount ?? 0} onChange={(n) => set({ target_amount: n })} />
             </Field>
             <Field label="By month (offset)">
-              <TextInput
-                type="number"
+              <NumberInput
                 value={v.target_month ?? 12}
-                onChange={(e) => set({ target_month: Number(e.target.value) })}
+                onChange={(n) => set({ target_month: n ?? 1 })}
+                integer
+                min={1}
               />
             </Field>
           </div>
@@ -458,10 +455,10 @@ function EventEditor({ value, onSave, onClose }: { value: PlanEvent; onSave: (e:
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start month">
-            <TextInput type="number" value={v.start_month} onChange={(e) => set({ start_month: Number(e.target.value) })} />
+            <NumberInput value={v.start_month} onChange={(n) => set({ start_month: n ?? 1 })} integer min={1} />
           </Field>
           <Field label="Duration (months)">
-            <TextInput type="number" value={v.duration_months} onChange={(e) => set({ duration_months: Number(e.target.value) })} />
+            <NumberInput value={v.duration_months} onChange={(n) => set({ duration_months: n ?? 1 })} integer min={1} />
           </Field>
         </div>
         <p className="text-xs text-slate-400">Cost is spread evenly across the duration.</p>

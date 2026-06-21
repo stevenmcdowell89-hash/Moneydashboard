@@ -84,6 +84,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const setPlan = useCallback((p: PlanState) => {
     planRef.current = p;
+    seedTempId(p);
     setPlanState(p);
   }, []);
 
@@ -139,6 +140,28 @@ export function useStore(): Store {
   return ctx;
 }
 
-// ---- tiny id helper for new client-side rows (negative until persisted) ----
+// ---- id helper for new client-side rows (negative until persisted) ----
+//
+// Negative temp ids are stored verbatim in the DB (see worker/src/db.ts) and
+// round-trip on the next load. The counter therefore MUST start below every id
+// already in the loaded plan — otherwise a freshly created row could reuse an id
+// that's still in use, producing duplicate React keys: two rows that share an id
+// render twice and deleting one filters out both. seedTempId is called whenever
+// the whole plan is (re)loaded to keep new ids collision-free across sessions.
 let tempId = -1;
 export const nextTempId = () => tempId--;
+
+export function seedTempId(plan: PlanState) {
+  let min = 0;
+  const scan = (rows: { id: number }[]) => {
+    for (const r of rows) if (r.id < min) min = r.id;
+  };
+  scan(plan.income);
+  scan(plan.income_oneoff);
+  scan(plan.bills);
+  scan(plan.savings_targets);
+  scan(plan.events);
+  scan(plan.scenarios);
+  scan(plan.scenario_overrides);
+  tempId = min - 1;
+}
