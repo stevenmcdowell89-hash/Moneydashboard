@@ -3,7 +3,7 @@ import { nextTempId } from '../state/store';
 import { usePlanScope } from '../state/scope';
 import { monthlyBillAmount } from '../engine';
 import { FREQUENCIES, gbp, type Bill, type Frequency } from '../types';
-import { Button, MoneyInput, NumberInput, Select, TextInput, Toggle } from './ui';
+import { Button, Modal, MoneyInput, NumberInput, Select, TextInput, Toggle } from './ui';
 
 const UNCATEGORISED = 'Other';
 
@@ -33,7 +33,7 @@ function BillEditor({ bill, onClose }: { bill: Bill; onClose: () => void }) {
   };
 
   return (
-    <div className="space-y-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
+    <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <label className="col-span-2 block">
           <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Name</span>
@@ -93,12 +93,12 @@ function Group({
   name,
   bills,
   openId,
-  setOpenId,
+  onOpen,
 }: {
   name: string;
   bills: Bill[];
   openId: number | null;
-  setOpenId: (id: number | null) => void;
+  onOpen: (id: number) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const subtotal = bills.reduce((s, b) => s + monthlyBillAmount(b), 0);
@@ -120,17 +120,18 @@ function Group({
       {!collapsed && (
         <div className="divide-y divide-slate-100 border-t border-slate-100">
           {bills.map((b) => (
-            <div key={b.id}>
-              <button onClick={() => setOpenId(openId === b.id ? null : b.id)} className="flex w-full items-center gap-2 px-4 py-2.5 text-left">
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {b.name || <span className="text-slate-400">Untitled</span>}
-                  {b.is_savings && <span className="ml-2 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-good">saving</span>}
-                  {!b.active && <span className="ml-2 text-[10px] text-slate-400">off</span>}
-                </span>
-                <span className="text-sm tabular-nums text-slate-700">{gbp(monthlyBillAmount(b))}</span>
-              </button>
-              {openId === b.id && <BillEditor bill={b} onClose={() => setOpenId(null)} />}
-            </div>
+            <button
+              key={b.id}
+              onClick={() => onOpen(b.id)}
+              className={`flex w-full items-center gap-2 px-4 py-2.5 text-left ${openId === b.id ? 'bg-slate-50' : ''}`}
+            >
+              <span className="min-w-0 flex-1 truncate text-sm">
+                {b.name || <span className="text-slate-400">Untitled</span>}
+                {b.is_savings && <span className="ml-2 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-good">saving</span>}
+                {!b.active && <span className="ml-2 text-[10px] text-slate-400">off</span>}
+              </span>
+              <span className="text-sm tabular-nums text-slate-700">{gbp(monthlyBillAmount(b))}</span>
+            </button>
           ))}
         </div>
       )}
@@ -158,6 +159,10 @@ export function OutgoingsSection() {
     setOpenId(b.id);
   };
 
+  // Resolved from the live list by id so editing category (which re-groups the
+  // list below) never remounts the editor and drops keyboard focus.
+  const openBill = openId == null ? null : plan.bills.find((b) => b.id === openId) ?? null;
+
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between px-1">
@@ -175,10 +180,14 @@ export function OutgoingsSection() {
       ) : (
         <div className="space-y-2">
           {groups.map(([name, bills]) => (
-            <Group key={name} name={name} bills={bills} openId={openId} setOpenId={setOpenId} />
+            <Group key={name} name={name} bills={bills} openId={openId} onOpen={setOpenId} />
           ))}
         </div>
       )}
+
+      <Modal open={openBill != null} onClose={() => setOpenId(null)} title={openBill?.is_savings ? 'Savings' : 'Bill'}>
+        {openBill && <BillEditor bill={openBill} onClose={() => setOpenId(null)} />}
+      </Modal>
     </section>
   );
 }

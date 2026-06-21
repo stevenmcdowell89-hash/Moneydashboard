@@ -21,6 +21,9 @@ function SaveIndicator() {
 
 function Shell() {
   const { loading, loadError } = useStore();
+  // Hooks must run unconditionally and in the same order every render — keep
+  // useState above the early returns below, or React throws once loading flips.
+  const [view, setView] = useState<'home' | 'scenarios'>('home');
   if (loading) {
     return <div className="flex h-screen items-center justify-center text-slate-400">Loading…</div>;
   }
@@ -33,7 +36,6 @@ function Shell() {
       </div>
     );
   }
-  const [view, setView] = useState<'home' | 'scenarios'>('home');
   return (
     <>
       {view === 'home' ? (

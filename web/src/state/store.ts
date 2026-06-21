@@ -84,6 +84,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const setPlan = useCallback((p: PlanState) => {
     planRef.current = p;
+    seedTempId(p);
     setPlanState(p);
   }, []);
 
@@ -139,6 +140,38 @@ export function useStore(): Store {
   return ctx;
 }
 
-// ---- tiny id helper for new client-side rows (negative until persisted) ----
+// ---- id helper for new client-side rows (negative until persisted) ----
+//
+// Negative temp ids are written to D1 verbatim (worker/src/db.ts re-inserts every
+// row with its client-supplied id) and round-trip on the next load. The counter
+// must therefore start BELOW every id already in the loaded plan: a module-level
+// reset to -1 would otherwise hand a freshly added row an id that's still in use,
+// producing two rows that share an id. Those render as duplicates and deleting
+// one (filter by id) removes both — exactly the "added two rows, deleting one
+// deleted both" bug. seedTempId runs on every load to keep ids collision-free.
 let tempId = -1;
 export const nextTempId = () => tempId--;
+
+export function seedTempId(plan: PlanState) {
+  let min = 0;
+  const scan = (rows: { id: number }[]) => {
+    for (const r of rows) if (r.id < min) min = r.id;
+  };
+  scan(plan.income);
+  scan(plan.income_oneoff);
+  scan(plan.bills);
+  scan(plan.targets);
+  scan(plan.events);
+  scan(plan.scenarios);
+  // Scenarios carry their own cloned rows inside a JSON payload; those ids can be
+  // edited too, so include them when picking the next temp id.
+  for (const s of plan.scenarios) {
+    try {
+      const p = JSON.parse(s.payload || '{}') as Record<string, { id: number }[]>;
+      for (const arr of Object.values(p)) if (Array.isArray(arr)) scan(arr);
+    } catch {
+      /* ignore unparseable payloads */
+    }
+  }
+  tempId = min - 1;
+}
