@@ -13,15 +13,16 @@ import type {
 // field with a placeholder (no hard "0" to delete), and partial entries like
 // "0." / "1." while typing aren't clobbered. They use a filtered TEXT input
 // (inputMode decimal) rather than type=number, and strip anything non-numeric on
-// input. The field selects its contents on focus so editing an existing value
-// REPLACES it rather than appending to it (otherwise tapping a field that shows
-// "1" and typing "3" yields "13" — the leading digit looks like it was added).
+// input.
 //
-// We deliberately do NOT mutate the value on blur. An earlier version tried to
-// "strip a stray keyboard character" on blur, but it had no reliable way to tell
-// a stray character from a digit the user typed, so closing the keyboard right
-// after typing silently corrupted the number (e.g. it reverted to the old value
-// or snapped to a coerced minimum). Buffering + input filtering is enough.
+// IMPORTANT (MIUI / Xiaomi keyboard): this hook must NOT attach onFocus or onBlur
+// handlers to the input. On MIUI's decimal keypad, having any focus/blur handler
+// doing work on these fields makes the keyboard's hide/down-arrow register as a
+// digit keypress (it lands a "7"): a blur handler appends it, and select-on-focus
+// makes it replace the whole value. A plain controlled input with neither handler
+// dismisses cleanly — verified on-device with an A/B probe. So: value buffer +
+// input filtering only, nothing on focus/blur. (Display normalisation like
+// "007" -> "7" is not worth reintroducing the bug.)
 function sanitizeNumeric(raw: string): string {
   let t = raw.replace(/[^0-9.]/g, '');
   const dot = t.indexOf('.');
@@ -50,13 +51,7 @@ function useNumericText(value: number | null | undefined, onChange: (n: number) 
     onChange(t === '' || t === '.' ? 0 : Number(t));
   };
 
-  // Select-all on focus so the first keystroke replaces the existing value.
-  const onFocus = (e: { currentTarget: HTMLInputElement }) => e.currentTarget.select();
-  // On blur, only normalise the DISPLAY to the committed number ("007" -> "7",
-  // "5." -> "5"). Never changes the value, so it can't corrupt what you typed.
-  const onBlur = () => setText(v === 0 ? '' : String(v));
-
-  return { text, handle, onFocus, onBlur };
+  return { text, handle };
 }
 
 export function Card({
@@ -142,7 +137,7 @@ export function MoneyInput({
   placeholder?: string;
   step?: string;
 }) {
-  const { text, handle, onFocus, onBlur } = useNumericText(value, onChange);
+  const { text, handle } = useNumericText(value, onChange);
   return (
     <div className={`relative ${className}`}>
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">£</span>
@@ -157,8 +152,6 @@ export function MoneyInput({
         placeholder={placeholder}
         value={text}
         onChange={(e) => handle(e.target.value)}
-        onFocus={onFocus}
-        onBlur={onBlur}
         className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-7 pr-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-blue-100"
       />
     </div>
@@ -181,7 +174,7 @@ export function NumberInput({
   step?: string;
   suffix?: string;
 }) {
-  const { text, handle, onFocus, onBlur } = useNumericText(value, onChange);
+  const { text, handle } = useNumericText(value, onChange);
   return (
     <div className={`relative ${className}`}>
       <input
@@ -195,8 +188,6 @@ export function NumberInput({
         placeholder={placeholder}
         value={text}
         onChange={(e) => handle(e.target.value)}
-        onFocus={onFocus}
-        onBlur={onBlur}
         className={`w-full rounded-xl border border-slate-300 bg-white py-2 pl-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-blue-100 ${
           suffix ? 'pr-8' : 'pr-3'
         }`}

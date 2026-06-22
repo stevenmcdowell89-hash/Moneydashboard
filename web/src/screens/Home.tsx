@@ -13,7 +13,6 @@ import { VariableTracker } from '../components/VariableTracker';
 import { Reports } from '../components/Reports';
 import { SettingsPanel } from './Settings';
 import { PayBreakdownModal } from '../components/PayBreakdownModal';
-import { KeypadProbe } from '../components/_KeypadProbe';
 
 export function Home({ onOpenScenarios }: { onOpenScenarios: () => void }) {
   const { plan, update } = useStore();
@@ -26,11 +25,8 @@ export function Home({ onOpenScenarios }: { onOpenScenarios: () => void }) {
   const model = useDashboard(horizon);
   const m = model.monthOne;
 
-  const showProbe = typeof window !== 'undefined' && window.location.hash === '#probe';
-
   return (
     <div className="mx-auto min-h-screen max-w-md px-3 pb-10 pt-4">
-      {showProbe && <KeypadProbe />}
       <header className="mb-3 flex items-center justify-between px-1">
         <div>
           <h1 className="text-lg font-bold leading-none">Money Dashboard</h1>
